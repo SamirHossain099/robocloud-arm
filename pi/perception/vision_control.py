@@ -15,6 +15,25 @@ def compute_base_adjust(cx: int, frame_width: int, deadband: int = 20, gain: flo
     return int(error * gain)
 
 
+def compute_shoulder_adjust(
+    area: float,
+    target_area: float = 6000.0,
+    area_deadband: float = 1200.0,
+    shoulder_step: int = 2,
+) -> int:
+    area_error = area - target_area
+
+    if abs(area_error) < area_deadband:
+        return 0
+
+    # Object looks large (near): move shoulder up.
+    if area_error > 0:
+        return +shoulder_step
+
+    # Object looks small (far): move shoulder down.
+    return -shoulder_step
+
+
 def vision_base_control(camera, router: CommandRouter) -> None:
     tracker = ColorTracker()
 
@@ -30,12 +49,20 @@ def vision_base_control(camera, router: CommandRouter) -> None:
             continue
 
         cx, _ = result["center"]
-        adjust = compute_base_adjust(cx, frame.shape[1])
-        if adjust != 0:
+        area = float(result["area"])
+        base_adjust = compute_base_adjust(cx, frame.shape[1])
+        shoulder_adjust = compute_shoulder_adjust(area)
+        if base_adjust != 0 or shoulder_adjust != 0:
             router.submit(
                 Arm.command(
-                    "vision_base_adjust",
-                    {"delta": -adjust, "cx": cx, "frame_width": frame.shape[1]},
+                    "vision_track_adjust",
+                    {
+                        "delta_base": -base_adjust,
+                        "delta_shoulder": shoulder_adjust,
+                        "cx": cx,
+                        "frame_width": frame.shape[1],
+                        "area": area,
+                    },
                     "low",
                 )
             )

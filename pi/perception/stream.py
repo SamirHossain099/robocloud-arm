@@ -5,7 +5,7 @@ import time
 import cv2
 
 from pi.perception.tracker import ColorTracker
-from pi.perception.vision_control import compute_base_adjust
+from pi.perception.vision_control import compute_base_adjust, compute_shoulder_adjust
 
 
 class _StreamingHandler(server.BaseHTTPRequestHandler):
@@ -92,6 +92,7 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                 error = cx - frame_center_x
                 adjust = compute_base_adjust(cx, frame_w)
                 vision_delta = -adjust
+                shoulder_delta = compute_shoulder_adjust(float(area))
 
                 now = time.time()
                 if now - last_log_ts >= 0.5:
@@ -117,6 +118,16 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.55,
                     (0, 255, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
+                cv2.putText(
+                    output,
+                    f"area={area} shoulder_delta={shoulder_delta}",
+                    (10, 84),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55,
+                    (255, 255, 0),
                     2,
                     cv2.LINE_AA,
                 )

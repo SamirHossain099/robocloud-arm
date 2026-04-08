@@ -98,6 +98,12 @@ class CommandExecutor:
             self._execute_vision_base_adjust(delta)
             return
 
+        if ctype == "vision_track_adjust":
+            delta_base = int(params.get("delta_base", 0))
+            delta_shoulder = int(params.get("delta_shoulder", 0))
+            self._execute_vision_track_adjust(delta_base, delta_shoulder)
+            return
+
     def _execute_keyboard_key(self, key: str) -> None:
         base, shoulder, elbow, wrist, claw = self.arm.get_pose()
         new_base, new_shoulder, new_elbow, new_wrist, new_claw = (
@@ -160,5 +166,21 @@ class CommandExecutor:
 
         self.arm.move_to(
             (new_base, shoulder, elbow, wrist, claw),
+            interrupt_event=self.router.interrupt_event,
+        )
+
+    def _execute_vision_track_adjust(self, delta_base: int, delta_shoulder: int) -> None:
+        if delta_base == 0 and delta_shoulder == 0:
+            return
+
+        base, shoulder, elbow, wrist, claw = self.arm.get_pose()
+        new_base = _clamp(base + delta_base, BASE_MIN, BASE_MAX)
+        new_shoulder = _clamp(shoulder + delta_shoulder, SHOULDER_MIN, SHOULDER_MAX)
+
+        if new_base == base and new_shoulder == shoulder:
+            return
+
+        self.arm.move_to(
+            (new_base, new_shoulder, elbow, wrist, claw),
             interrupt_event=self.router.interrupt_event,
         )
