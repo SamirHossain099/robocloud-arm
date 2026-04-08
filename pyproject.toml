@@ -11,7 +11,8 @@ dependencies = [
     "pyserial",
     "SpeechRecognition",
     "pyaudio",
+    "opencv-python",
 ]
 
 [tool.setuptools]
-packages = ["pi", "pi.controller", "pi.input"]
+packages = ["pi", "pi.controller", "pi.input", "pi.perception"]
