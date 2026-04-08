@@ -1,4 +1,5 @@
-SERIAL_PORT = "/dev/ttyACM0"
+# Raspberry Pi UART pins (TX/RX) typically appear as /dev/serial0.
+SERIAL_PORT = "/dev/serial0"
 SERIAL_BAUDRATE = 115200
 
 CONTROL_TRANSPORT = "serial"  # "serial" or "network"

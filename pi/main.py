@@ -69,9 +69,11 @@ def main() -> None:
         io_transport.connect()
         print(f"Control transport: network ({network_host}:{network_port})")
     else:
-        io_transport = SerialIO(port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE, timeout=1)
+        serial_port = os.getenv("ROBOCLOUD_SERIAL_PORT", SERIAL_PORT)
+        serial_baudrate = int(os.getenv("ROBOCLOUD_SERIAL_BAUDRATE", str(SERIAL_BAUDRATE)))
+        io_transport = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
         io_transport.connect()
-        print(f"Control transport: serial ({SERIAL_PORT} @ {SERIAL_BAUDRATE})")
+        print(f"Control transport: serial ({serial_port} @ {serial_baudrate})")
 
     arm = Arm(serial_io=io_transport)
     router = CommandRouter()

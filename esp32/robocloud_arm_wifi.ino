@@ -27,6 +27,13 @@ const uint16_t TCP_PORT = 9000;
 WiFiServer server(TCP_PORT);
 WiFiClient client;
 
+// UART control link from Raspberry Pi (TX/RX).
+// Adjust pins to match your ESP32-S3 board wiring if needed.
+HardwareSerial ArmSerial(1);
+const int ARM_UART_RX_PIN = 44;  // ESP RX <- Pi TX (J3 RX / U0RXD)
+const int ARM_UART_TX_PIN = 43;  // ESP TX -> Pi RX (J3 TX / U0TXD)
+const uint32_t ARM_UART_BAUD = 115200;
+
 struct ArmPose {
   int base;
   int shoulder;
@@ -91,6 +98,7 @@ void replyLine(const String &msg) {
   if (client && client.connected()) {
     client.println(msg);
   }
+  ArmSerial.println(msg);
 }
 
 void handleCommand(String cmd) {
@@ -197,6 +205,7 @@ void connectWiFi() {
 // ---------- Setup ----------
 void setup() {
   Serial.begin(115200);
+  ArmSerial.begin(ARM_UART_BAUD, SERIAL_8N1, ARM_UART_RX_PIN, ARM_UART_TX_PIN);
   Wire.begin(SDA_PIN, SCL_PIN);
 
   pwm.begin();
@@ -232,6 +241,10 @@ void setup() {
 
   Serial.print("TCP server listening on port ");
   Serial.println(TCP_PORT);
+  Serial.print("UART control ready on RX=");
+  Serial.print(ARM_UART_RX_PIN);
+  Serial.print(" TX=");
+  Serial.println(ARM_UART_TX_PIN);
   Serial.println("READY");
 }
 
@@ -255,6 +268,12 @@ void loop() {
   // Network command input (serial command input intentionally disabled)
   if (client && client.connected() && client.available()) {
     String cmd = client.readStringUntil('\n');
+    handleCommand(cmd);
+  }
+
+  // UART command input from Raspberry Pi
+  if (ArmSerial.available()) {
+    String cmd = ArmSerial.readStringUntil('\n');
     handleCommand(cmd);
   }
 }
