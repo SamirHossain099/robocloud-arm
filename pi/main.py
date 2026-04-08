@@ -10,9 +10,17 @@ if __package__ is None or __package__ == "":
     # Allow running as: python pi/main.py
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pi.config import SERIAL_BAUDRATE, SERIAL_PORT
+from pi.config import (
+    CONTROL_TRANSPORT,
+    NETWORK_HOST,
+    NETWORK_PORT,
+    NETWORK_TIMEOUT,
+    SERIAL_BAUDRATE,
+    SERIAL_PORT,
+)
 from pi.controller.arm import Arm
 from pi.controller.executor import CommandExecutor, CommandRouter
+from pi.controller.network_io import NetworkIO
 from pi.controller.serial_io import SerialIO
 from pi.input.keyboard import keyboard_control
 from pi.input.voice import voice_control
@@ -43,15 +51,29 @@ def camera_view(camera):
 
 def main() -> None:
     os.environ["PYTHONWARNINGS"] = "ignore"
+    control_transport = os.getenv("ROBOCLOUD_CONTROL_TRANSPORT", CONTROL_TRANSPORT).lower()
     enable_voice = os.getenv("ROBOCLOUD_ENABLE_VOICE", "0") == "1"
     enable_live_feed = os.getenv("ROBOCLOUD_ENABLE_LIVE_FEED", "0") == "1"
     enable_stream = os.getenv("ROBOCLOUD_ENABLE_STREAM", "0") == "1"
     stream_port = int(os.getenv("ROBOCLOUD_STREAM_PORT", "8080"))
 
-    serial_io = SerialIO(port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE, timeout=1)
-    serial_io.connect()
+    if control_transport == "network":
+        network_host = os.getenv("ROBOCLOUD_NETWORK_HOST", NETWORK_HOST)
+        network_port = int(os.getenv("ROBOCLOUD_NETWORK_PORT", str(NETWORK_PORT)))
+        network_timeout = float(
+            os.getenv("ROBOCLOUD_NETWORK_TIMEOUT", str(NETWORK_TIMEOUT))
+        )
+        io_transport = NetworkIO(
+            host=network_host, port=network_port, timeout=network_timeout
+        )
+        io_transport.connect()
+        print(f"Control transport: network ({network_host}:{network_port})")
+    else:
+        io_transport = SerialIO(port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE, timeout=1)
+        io_transport.connect()
+        print(f"Control transport: serial ({SERIAL_PORT} @ {SERIAL_BAUDRATE})")
 
-    arm = Arm(serial_io=serial_io)
+    arm = Arm(serial_io=io_transport)
     router = CommandRouter()
     executor = CommandExecutor(arm=arm, router=router)
     camera = Camera()

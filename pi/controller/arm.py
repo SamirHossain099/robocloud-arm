@@ -1,5 +1,5 @@
 from threading import Event, Lock
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 from pi.config import (
     BASE_DEFAULT,
@@ -9,11 +9,10 @@ from pi.config import (
     WRIST_DEFAULT,
 )
 from pi.controller.motion import move_smooth
-from pi.controller.serial_io import SerialIO
 
 
 class Arm:
-    def __init__(self, serial_io: SerialIO) -> None:
+    def __init__(self, serial_io: Any) -> None:
         self.serial_io = serial_io
         self._lock = Lock()
         self._joints = [
