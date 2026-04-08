@@ -3,6 +3,8 @@ from socketserver import ThreadingMixIn
 
 import cv2
 
+from pi.perception.tracker import ColorTracker
+
 
 class _StreamingHandler(server.BaseHTTPRequestHandler):
     camera = None
@@ -26,12 +28,46 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=FRAME")
         self.end_headers()
 
+        tracker = ColorTracker()
+
         while True:
             frame = self.camera.get_frame() if self.camera else None
             if frame is None:
                 continue
 
-            ok, jpg = cv2.imencode(".jpg", frame)
+            result = tracker.track(frame)
+            output = frame.copy()
+
+            if result:
+                cx, cy = result["center"]
+                x, y, w, h = result["bbox"]
+                area = int(result["area"])
+
+                cv2.rectangle(output, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.circle(output, (cx, cy), 5, (0, 0, 255), -1)
+                cv2.putText(
+                    output,
+                    f"RED FOUND area={area}",
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 0),
+                    2,
+                    cv2.LINE_AA,
+                )
+            else:
+                cv2.putText(
+                    output,
+                    "NO RED",
+                    (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
+
+            ok, jpg = cv2.imencode(".jpg", output)
             if not ok:
                 continue
 
