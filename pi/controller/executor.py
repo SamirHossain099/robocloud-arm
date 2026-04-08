@@ -111,8 +111,8 @@ class CommandExecutor:
         """
         Manual teleop (no vision):
         A/D — base 11 pan
-        F   — forward: 12 and 13 opposite PWM (shoulder +, elbow −)
-        B   — backward: reverse (+ shoulder −, elbow +), clamped so 12/13 stay in
+        F   — forward: shoulder −, elbow + (opposite PWM; swapped vs prior build)
+        B   — backward: shoulder +, elbow −, clamped toward home on 12/13
               [SHOULDER_MIN..SHOULDER_DEFAULT] and [ELBOW_MIN..ELBOW_DEFAULT]
         W/S — up/down: wrist 14 only
         O/C — claw 15
@@ -136,11 +136,11 @@ class CommandExecutor:
         elif key == "s":
             new_wrist -= STEP
         elif key == "f":
-            new_shoulder += STEP
-            new_elbow -= STEP
-        elif key == "b":
             new_shoulder -= STEP
             new_elbow += STEP
+        elif key == "b":
+            new_shoulder += STEP
+            new_elbow -= STEP
             new_shoulder = _clamp(new_shoulder, SHOULDER_MIN, SHOULDER_DEFAULT)
             new_elbow = _clamp(new_elbow, ELBOW_MIN, ELBOW_DEFAULT)
         elif key == "o":
