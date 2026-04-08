@@ -1,5 +1,6 @@
 from http import server
 from socketserver import ThreadingMixIn
+import time
 
 import cv2
 
@@ -29,6 +30,7 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
         self.end_headers()
 
         tracker = ColorTracker()
+        last_log_ts = 0.0
 
         while True:
             frame = self.camera.get_frame() if self.camera else None
@@ -42,6 +44,11 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                 cx, cy = result["center"]
                 x, y, w, h = result["bbox"]
                 area = int(result["area"])
+
+                now = time.time()
+                if now - last_log_ts >= 0.5:
+                    print(f"TRACK center=({cx}, {cy}) area={area}")
+                    last_log_ts = now
 
                 cv2.rectangle(output, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 cv2.circle(output, (cx, cy), 5, (0, 0, 255), -1)
