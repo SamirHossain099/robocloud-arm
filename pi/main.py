@@ -31,6 +31,7 @@ def camera_view(camera):
 def main() -> None:
     os.environ["PYTHONWARNINGS"] = "ignore"
     enable_voice = os.getenv("ROBOCLOUD_ENABLE_VOICE", "0") == "1"
+    enable_live_feed = os.getenv("ROBOCLOUD_ENABLE_LIVE_FEED", "0") == "1"
 
     serial_io = SerialIO(port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE, timeout=1)
     serial_io.connect()
@@ -45,7 +46,6 @@ def main() -> None:
     keyboard_thread = threading.Thread(
         target=keyboard_control, args=(router,), daemon=True
     )
-    cam_thread = threading.Thread(target=camera_view, args=(camera,), daemon=True)
 
     executor_thread.start()
     if enable_voice:
@@ -55,7 +55,12 @@ def main() -> None:
     else:
         print("Voice thread disabled (set ROBOCLOUD_ENABLE_VOICE=1 to enable)")
     keyboard_thread.start()
-    cam_thread.start()
+    if enable_live_feed:
+        cam_thread = threading.Thread(target=camera_view, args=(camera,), daemon=True)
+        cam_thread.start()
+        print("Live feed enabled")
+    else:
+        print("Live feed disabled (set ROBOCLOUD_ENABLE_LIVE_FEED=1 to enable)")
 
     while True:
         time.sleep(1.0)
