@@ -59,7 +59,9 @@ class CommandExecutor:
             if command is None:
                 continue
 
-            # New command starts with a fresh interruption state.
+            print("Executing:", command)
+
+            # Clear before this command starts executing.
             self.router.interrupt_event.clear()
             self._execute(command)
 

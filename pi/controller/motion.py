@@ -15,7 +15,7 @@ def move_smooth(
     # Core stepping behavior is intentionally preserved.
     while True:
         if interrupt_event.is_set():
-            return False
+            return False  # immediate exit, executor handles next command
 
         done = True
 

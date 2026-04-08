@@ -14,7 +14,7 @@ def voice_control(router: CommandRouter) -> None:
         try:
             with mic as source:
                 r.adjust_for_ambient_noise(source, duration=0.5)
-                audio = r.listen(source)
+                audio = r.listen(source, timeout=1, phrase_time_limit=3)
 
             text = r.recognize_google(audio).lower()
             print("Heard:", text)
