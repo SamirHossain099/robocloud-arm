@@ -7,6 +7,17 @@ import serial
 from pi.config import SERIAL_BAUDRATE, SERIAL_PORT
 
 
+def _setall_line(pwms: dict) -> str:
+    """Format setall line; str.format must not use {11} (parsed as arg index)."""
+    return "setall {} {} {} {} {}\n".format(
+        int(pwms[11]),
+        int(pwms[12]),
+        int(pwms[13]),
+        int(pwms[14]),
+        int(pwms[15]),
+    )
+
+
 def send_setall(
     pwms: dict,
     *,
@@ -18,7 +29,7 @@ def send_setall(
     Send one setall line. pwms uses int keys 11..15.
     If ser is provided, use it; otherwise open port for each call (avoid for loops).
     """
-    line = "setall {11} {12} {13} {14} {15}\n".format(**pwms)
+    line = _setall_line(pwms)
     own = False
     if ser is None:
         ser = serial.Serial(port, baudrate, timeout=1)
@@ -31,7 +42,7 @@ def send_setall(
 
 
 def send_setall_on_serial(ser: serial.Serial, pwms: dict) -> None:
-    line = "setall {11} {12} {13} {14} {15}\n".format(**pwms)
+    line = _setall_line(pwms)
     ser.write(line.encode())
 
 
