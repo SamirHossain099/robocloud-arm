@@ -17,6 +17,7 @@ from pi.controller.serial_io import SerialIO
 from pi.input.keyboard import keyboard_control
 from pi.input.voice import voice_control
 from pi.perception.camera import Camera
+from pi.perception.stream import start_stream_server
 
 
 def camera_view(camera):
@@ -32,6 +33,8 @@ def main() -> None:
     os.environ["PYTHONWARNINGS"] = "ignore"
     enable_voice = os.getenv("ROBOCLOUD_ENABLE_VOICE", "0") == "1"
     enable_live_feed = os.getenv("ROBOCLOUD_ENABLE_LIVE_FEED", "0") == "1"
+    enable_stream = os.getenv("ROBOCLOUD_ENABLE_STREAM", "0") == "1"
+    stream_port = int(os.getenv("ROBOCLOUD_STREAM_PORT", "8080"))
 
     serial_io = SerialIO(port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE, timeout=1)
     serial_io.connect()
@@ -61,6 +64,14 @@ def main() -> None:
         print("Live feed enabled")
     else:
         print("Live feed disabled (set ROBOCLOUD_ENABLE_LIVE_FEED=1 to enable)")
+    if enable_stream:
+        stream_thread = threading.Thread(
+            target=start_stream_server, args=(camera, "0.0.0.0", stream_port), daemon=True
+        )
+        stream_thread.start()
+        print(f"Camera stream enabled at http://0.0.0.0:{stream_port}/stream")
+    else:
+        print("Camera stream disabled (set ROBOCLOUD_ENABLE_STREAM=1 to enable)")
 
     while True:
         time.sleep(1.0)
