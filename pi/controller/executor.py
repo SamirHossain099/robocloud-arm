@@ -12,6 +12,7 @@ from pi.config import (
     SHOULDER_MAX,
     SHOULDER_MIN,
     STEP,
+    WRIST_DEFAULT,
     WRIST_MAX,
     WRIST_MIN,
 )
@@ -106,6 +107,14 @@ class CommandExecutor:
             return
 
     def _execute_keyboard_key(self, key: str) -> None:
+        """
+        Manual teleop (no vision):
+        A/D — base 11 pan left/right
+        W/S — shoulder 12 + elbow 13 reach forward/back, wrist 14 locked to WRIST_DEFAULT
+        F/B — wrist 14 trim up/down (level / frame tweak)
+        O/C — claw 15 open/close (incremental)
+        R   — reset pose
+        """
         base, shoulder, elbow, wrist, claw = self.arm.get_pose()
         new_base, new_shoulder, new_elbow, new_wrist, new_claw = (
             base,
@@ -122,18 +131,14 @@ class CommandExecutor:
         elif key == "w":
             new_shoulder += STEP
             new_elbow += STEP
-            new_wrist -= STEP // 2
+            new_wrist = WRIST_DEFAULT
         elif key == "s":
             new_shoulder -= STEP
             new_elbow -= STEP
-            new_wrist += STEP // 2
+            new_wrist = WRIST_DEFAULT
         elif key == "f":
-            new_shoulder -= STEP
-            new_elbow += STEP
             new_wrist += STEP
         elif key == "b":
-            new_shoulder += STEP
-            new_elbow -= STEP
             new_wrist -= STEP
         elif key == "o":
             new_claw -= STEP * 3
