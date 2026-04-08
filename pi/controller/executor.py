@@ -7,11 +7,8 @@ from pi.config import (
     BASE_MIN,
     CLAW_MAX,
     CLAW_MIN,
-    ELBOW_DEFAULT,
     ELBOW_MAX,
     ELBOW_MIN,
-    IK_CARTESIAN_STEP_MM,
-    SHOULDER_DEFAULT,
     SHOULDER_MAX,
     SHOULDER_MIN,
     STEP,
@@ -19,7 +16,6 @@ from pi.config import (
     WRIST_MIN,
 )
 from pi.controller.arm import Arm
-from pi.controller import kinematics as kin
 from pi.logutil import vprint
 
 
@@ -113,15 +109,11 @@ class CommandExecutor:
         """
         Manual teleop (no vision):
         A/D — base 11 pan
-        F   — forward: shoulder −, elbow + (opposite PWM; swapped vs prior build)
-        B   — backward: shoulder +, elbow −, clamped toward home on 12/13
-              [SHOULDER_MIN..SHOULDER_DEFAULT] and [ELBOW_MIN..ELBOW_DEFAULT]
-        W/S — up/down: wrist 14 only
+        1/2 — shoulder 12 − / + (one joint at a time; flip signs in code if reversed)
+        3/4 — elbow 13 − / +
+        W/S — wrist 14 up/down
         O/C — claw 15
-        R   — reset
-        P   — print current servo PWMs (no move), for hard-coding poses
-        T/G — IK nudge tip along +X / −X (mm, in shoulder plane)
-        Y/H — IK nudge tip along +Z / −Z (mm, up / down in plane)
+        P   — print servos (no move)  |  R — reset  |  Q — quit (keyboard thread)
         """
         base, shoulder, elbow, wrist, claw = self.arm.get_pose()
         new_base, new_shoulder, new_elbow, new_wrist, new_claw = (
@@ -140,14 +132,14 @@ class CommandExecutor:
             new_wrist += STEP
         elif key == "s":
             new_wrist -= STEP
-        elif key == "f":
+        elif key == "1":
             new_shoulder -= STEP
-            new_elbow += STEP
-        elif key == "b":
+        elif key == "2":
             new_shoulder += STEP
+        elif key == "3":
             new_elbow -= STEP
-            new_shoulder = _clamp(new_shoulder, SHOULDER_MIN, SHOULDER_DEFAULT)
-            new_elbow = _clamp(new_elbow, ELBOW_MIN, ELBOW_DEFAULT)
+        elif key == "4":
+            new_elbow += STEP
         elif key == "o":
             new_claw -= STEP * 3
         elif key == "c":
@@ -155,18 +147,6 @@ class CommandExecutor:
         elif key == "p":
             self._print_servo_pose()
             return
-        elif key in {"t", "g", "y", "h"}:
-            step = float(IK_CARTESIAN_STEP_MM)
-            dx = step if key == "t" else (-step if key == "g" else 0.0)
-            dz = step if key == "y" else (-step if key == "h" else 0.0)
-            ik = kin.nudge_tip(shoulder, elbow, dx, dz)
-            if ik is None:
-                print("IK: unreachable pose (try F/B joint teleop or tune IK_* in config)", flush=True)
-                return
-            new_shoulder, new_elbow = ik
-            new_base = base
-            new_wrist = wrist
-            new_claw = claw
         elif key == "r":
             self.arm.reset_pose(self.router.interrupt_event)
             self._print_servo_pose()

@@ -23,28 +23,17 @@ CLAW_DEFAULT = 320
 
 STEP = 4
 
-# ===== JOINT LIMITS (raise SHOULDER_MIN / ELBOW_MIN if arm hits bench / floor) =====
-BASE_MIN = 180
-BASE_MAX = 430
-SHOULDER_MIN = 280
-SHOULDER_MAX = SHOULDER_DEFAULT
-ELBOW_MIN = 100
-ELBOW_MAX = 500
-WRIST_MIN = 120
-WRIST_MAX = 480
-CLAW_MIN = 80
-CLAW_MAX = 420
+# ===== JOINT LIMITS (match ESP writeJoint: PWM_MIN / PWM_MAX — no extra Pi safety margin) =====
+PWM_LIMIT_MIN = 102
+PWM_LIMIT_MAX = 512
 
-# ===== INVERSE KINEMATICS (planar 2R: shoulder + elbow in vertical X–Z plane) =====
-# X: horizontal reach (mm) from shoulder pivot along "forward", Z: up (mm).
-# Calibrate IK_* on your hardware: print poses (P) at known configs, then tune.
-IK_LINK_L1_MM = 130.0
-IK_LINK_L2_MM = 120.0
-# Joint angles (rad) at the PWM home pose below (nominal — tune until FK matches reality).
-IK_SHOULDER_HOME_RAD = 1.15
-IK_ELBOW_HOME_RAD = -0.55
-# Linear map: pwm ≈ DEFAULT + PWM_PER_RAD * (theta - HOME_RAD)
-IK_SHOULDER_PWM_PER_RAD = -52.0
-IK_ELBOW_PWM_PER_RAD = 42.0
-IK_CARTESIAN_STEP_MM = 6.0
-IK_ELBOW_UP = True
+BASE_MIN = PWM_LIMIT_MIN
+BASE_MAX = PWM_LIMIT_MAX
+SHOULDER_MIN = PWM_LIMIT_MIN
+SHOULDER_MAX = PWM_LIMIT_MAX
+ELBOW_MIN = PWM_LIMIT_MIN
+ELBOW_MAX = PWM_LIMIT_MAX
+WRIST_MIN = PWM_LIMIT_MIN
+WRIST_MAX = PWM_LIMIT_MAX
+CLAW_MIN = PWM_LIMIT_MIN
+CLAW_MAX = PWM_LIMIT_MAX
