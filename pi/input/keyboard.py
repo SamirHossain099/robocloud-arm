@@ -18,8 +18,8 @@ def getch() -> str:
 
 def keyboard_control(router: CommandRouter) -> None:
     """
-      A/D — pan 11 | W/S — reach/ retract 12+13 (S stops at home) | F/B — up/down 14 |
-      O/C — claw 15 | R — reset | Q — quit.
+      A/D — pan 11 | F/B — forward/back 12+13 (opposite PWM, B capped to home) |
+      W/S — up/down 14 | O/C — claw 15 | R — reset | Q — quit.
     """
     while True:
         key = getch()

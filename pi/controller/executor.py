@@ -14,7 +14,6 @@ from pi.config import (
     SHOULDER_MAX,
     SHOULDER_MIN,
     STEP,
-    WRIST_DEFAULT,
     WRIST_MAX,
     WRIST_MIN,
 )
@@ -111,14 +110,13 @@ class CommandExecutor:
     def _execute_keyboard_key(self, key: str) -> None:
         """
         Manual teleop (no vision):
-        A/D — base 11 pan left/right
-        W   — reach forward: shoulder 12 and elbow 13 both decrease (reverse of old W);
-              wrist 14 set to WRIST_DEFAULT
-        S   — retract toward reset: 12/13 move back toward SHOULDER_DEFAULT / ELBOW_DEFAULT
-              only (never past home on those joints); wrist 14 → WRIST_DEFAULT
-        F/B — up/down / level trim: wrist 14 only (camera axis)
-        O/C — claw 15 open/close (incremental)
-        R   — reset pose
+        A/D — base 11 pan
+        F   — forward: 12 and 13 opposite PWM (shoulder +, elbow −)
+        B   — backward: reverse (+ shoulder −, elbow +), clamped so 12/13 stay in
+              [SHOULDER_MIN..SHOULDER_DEFAULT] and [ELBOW_MIN..ELBOW_DEFAULT]
+        W/S — up/down: wrist 14 only
+        O/C — claw 15
+        R   — reset
         """
         base, shoulder, elbow, wrist, claw = self.arm.get_pose()
         new_base, new_shoulder, new_elbow, new_wrist, new_claw = (
@@ -134,22 +132,17 @@ class CommandExecutor:
         elif key == "d":
             new_base -= STEP
         elif key == "w":
-            new_shoulder -= STEP
-            new_elbow -= STEP
-            new_wrist = WRIST_DEFAULT
-        elif key == "s":
-            new_shoulder = min(shoulder + STEP, SHOULDER_DEFAULT)
-            if elbow < ELBOW_DEFAULT:
-                new_elbow = min(elbow + STEP, ELBOW_DEFAULT)
-            elif elbow > ELBOW_DEFAULT:
-                new_elbow = max(elbow - STEP, ELBOW_DEFAULT)
-            else:
-                new_elbow = elbow
-            new_wrist = WRIST_DEFAULT
-        elif key == "f":
             new_wrist += STEP
-        elif key == "b":
+        elif key == "s":
             new_wrist -= STEP
+        elif key == "f":
+            new_shoulder += STEP
+            new_elbow -= STEP
+        elif key == "b":
+            new_shoulder -= STEP
+            new_elbow += STEP
+            new_shoulder = _clamp(new_shoulder, SHOULDER_MIN, SHOULDER_DEFAULT)
+            new_elbow = _clamp(new_elbow, ELBOW_MIN, ELBOW_DEFAULT)
         elif key == "o":
             new_claw -= STEP * 3
         elif key == "c":
