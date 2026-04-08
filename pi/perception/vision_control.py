@@ -1,3 +1,4 @@
+import os
 import time
 
 from pi.controller.arm import Arm
@@ -18,8 +19,8 @@ def compute_base_adjust(cx: int, frame_width: int, deadband: int = 20, gain: flo
 def compute_shoulder_adjust(
     area: float,
     target_area: float = 6000.0,
-    area_deadband: float = 1200.0,
-    shoulder_step: int = 2,
+    area_deadband: float = 2200.0,
+    shoulder_step: int = 1,
 ) -> int:
     area_error = area - target_area
 
@@ -30,7 +31,9 @@ def compute_shoulder_adjust(
     if area_error > 0:
         return +shoulder_step
 
-    # Object looks small (far): move shoulder down.
+    # Object small (far): reaching shoulder down often hits the floor; off unless enabled.
+    if os.getenv("ROBOCLOUD_VISION_SHOULDER_DOWN", "0") != "1":
+        return 0
     return -shoulder_step
 
 
@@ -67,4 +70,4 @@ def vision_base_control(camera, router: CommandRouter) -> None:
                 )
             )
 
-        time.sleep(0.08)
+        time.sleep(float(os.getenv("ROBOCLOUD_VISION_TICK_S", "0.18")))

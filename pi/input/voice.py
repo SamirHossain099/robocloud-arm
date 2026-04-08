@@ -4,13 +4,14 @@ import speech_recognition as sr
 
 from pi.controller.arm import Arm
 from pi.controller.executor import CommandRouter
+from pi.logutil import vprint
 
 
 def voice_control(router: CommandRouter) -> None:
     r = sr.Recognizer()
     mic = sr.Microphone(device_index=0)
 
-    print("Voice ready (say: dummy <command>)")
+    vprint("Voice ready (say: dummy <command>)")
 
     while True:
         try:
@@ -28,11 +29,11 @@ def voice_control(router: CommandRouter) -> None:
                     except sr.UnknownValueError:
                         continue
                     except sr.RequestError as err:
-                        print(f"Voice recognition request failed: {err}")
+                        vprint(f"Voice recognition request failed: {err}")
                         time.sleep(1.0)
                         continue
 
-                    print("Heard:", text)
+                    vprint("Heard:", text)
 
                     if "dummy" not in text:
                         continue
@@ -47,5 +48,5 @@ def voice_control(router: CommandRouter) -> None:
                         Arm.speak("I did not understand")
         except Exception as err:
             # Surface setup errors (bad mic index / missing capture device) instead of silent failure.
-            print(f"Voice input error: {err}")
+            vprint(f"Voice input error: {err}")
             time.sleep(2.0)

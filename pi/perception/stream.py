@@ -1,5 +1,6 @@
 from http import server
 from socketserver import ThreadingMixIn
+import os
 import time
 
 import cv2
@@ -36,7 +37,10 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                 self.end_headers()
                 return
 
-            ok, jpg = cv2.imencode(".jpg", frame)
+            q = int(os.getenv("ROBOCLOUD_STREAM_JPEG_QUALITY", "65"))
+            ok, jpg = cv2.imencode(
+                ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), q]
+            )
             if not ok:
                 self.send_error(500, "Failed to encode frame")
                 self.end_headers()
@@ -63,7 +67,9 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
         self.end_headers()
 
         tracker = ColorTracker()
-        last_log_ts = 0.0
+        frame_interval = float(os.getenv("ROBOCLOUD_STREAM_FRAME_INTERVAL", "0.08"))
+        jpeg_q = int(os.getenv("ROBOCLOUD_STREAM_JPEG_QUALITY", "65"))
+        encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_q]
 
         while True:
             frame = self.camera.get_frame() if self.camera else None
@@ -93,11 +99,6 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                 adjust = compute_base_adjust(cx, frame_w)
                 vision_delta = -adjust
                 shoulder_delta = compute_shoulder_adjust(float(area))
-
-                now = time.time()
-                if now - last_log_ts >= 0.5:
-                    print(f"TRACK center=({cx}, {cy}) area={area}")
-                    last_log_ts = now
 
                 cv2.rectangle(output, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 cv2.circle(output, (cx, cy), 5, (0, 0, 255), -1)
@@ -143,7 +144,7 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                     cv2.LINE_AA,
                 )
 
-            ok, jpg = cv2.imencode(".jpg", output)
+            ok, jpg = cv2.imencode(".jpg", output, encode_params)
             if not ok:
                 continue
 
@@ -159,6 +160,9 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                 break
             except ConnectionResetError:
                 break
+
+            if frame_interval > 0:
+                time.sleep(frame_interval)
 
 
 class _ThreadedHTTPServer(ThreadingMixIn, server.HTTPServer):

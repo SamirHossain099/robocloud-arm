@@ -27,6 +27,7 @@ from pi.input.voice import voice_control
 from pi.perception.camera import Camera
 from pi.perception.stream import start_stream_server
 from pi.perception.tracker import ColorTracker
+from pi.logutil import vprint
 from pi.perception.vision_control import vision_base_control
 
 
@@ -69,13 +70,13 @@ def main() -> None:
             host=network_host, port=network_port, timeout=network_timeout
         )
         io_transport.connect()
-        print(f"Control transport: network ({network_host}:{network_port})")
+        vprint(f"Control transport: network ({network_host}:{network_port})")
     else:
         serial_port = os.getenv("ROBOCLOUD_SERIAL_PORT", SERIAL_PORT)
         serial_baudrate = int(os.getenv("ROBOCLOUD_SERIAL_BAUDRATE", str(SERIAL_BAUDRATE)))
         io_transport = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
         io_transport.connect()
-        print(f"Control transport: serial ({serial_port} @ {serial_baudrate})")
+        vprint(f"Control transport: serial ({serial_port} @ {serial_baudrate})")
 
     arm = Arm(serial_io=io_transport)
     router = CommandRouter()
@@ -95,29 +96,29 @@ def main() -> None:
     if enable_voice:
         voice_thread = threading.Thread(target=voice_control, args=(router,), daemon=True)
         voice_thread.start()
-        print("Voice thread enabled")
+        vprint("Voice thread enabled")
     else:
-        print("Voice thread disabled (set ROBOCLOUD_ENABLE_VOICE=1 to enable)")
+        vprint("Voice thread disabled (set ROBOCLOUD_ENABLE_VOICE=1 to enable)")
     keyboard_thread.start()
     if enable_live_feed:
         cam_thread = threading.Thread(target=camera_view, args=(camera,), daemon=True)
         cam_thread.start()
-        print("Live feed enabled")
+        vprint("Live feed enabled")
     else:
-        print("Live feed disabled (set ROBOCLOUD_ENABLE_LIVE_FEED=1 to enable)")
+        vprint("Live feed disabled (set ROBOCLOUD_ENABLE_LIVE_FEED=1 to enable)")
     if enable_stream:
         stream_thread = threading.Thread(
             target=start_stream_server, args=(camera, "0.0.0.0", stream_port), daemon=True
         )
         stream_thread.start()
-        print(f"Camera stream enabled at http://0.0.0.0:{stream_port}/stream")
+        vprint(f"Camera stream enabled at http://0.0.0.0:{stream_port}/stream")
     else:
-        print("Camera stream disabled (set ROBOCLOUD_ENABLE_STREAM=1 to enable)")
+        vprint("Camera stream disabled (set ROBOCLOUD_ENABLE_STREAM=1 to enable)")
     if enable_vision_base:
         vision_thread.start()
-        print("Vision base control enabled")
+        vprint("Vision base control enabled")
     else:
-        print("Vision base control disabled (set ROBOCLOUD_ENABLE_VISION_BASE=1 to enable)")
+        vprint("Vision base control disabled (set ROBOCLOUD_ENABLE_VISION_BASE=1 to enable)")
 
     while True:
         time.sleep(1.0)

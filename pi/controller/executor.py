@@ -16,6 +16,7 @@ from pi.config import (
     WRIST_MIN,
 )
 from pi.controller.arm import Arm
+from pi.logutil import vprint
 
 
 def _clamp(value: int, minimum: int, maximum: int) -> int:
@@ -59,7 +60,7 @@ class CommandExecutor:
             if command is None:
                 continue
 
-            print("Executing:", command)
+            vprint("Executing:", command)
 
             # Clear before this command starts executing.
             self.router.interrupt_event.clear()

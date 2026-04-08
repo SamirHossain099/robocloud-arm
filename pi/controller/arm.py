@@ -9,6 +9,7 @@ from pi.config import (
     WRIST_DEFAULT,
 )
 from pi.controller.motion import move_smooth
+from pi.logutil import vprint
 
 
 class Arm:
@@ -53,7 +54,7 @@ class Arm:
     def speak(text: str) -> None:
         import os
 
-        print("Robot:", text)
+        vprint("Robot:", text)
         os.system(f'espeak "{text}"')
 
     @staticmethod

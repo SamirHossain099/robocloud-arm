@@ -16,14 +16,15 @@ CLAW_DEFAULT = 320
 
 STEP = 4
 
-# ===== JOINT LIMITS =====
+# ===== JOINT LIMITS (tune SHOULDER_MIN / ELBOW_MIN if arm still touches floor) =====
 BASE_MIN = 180
 BASE_MAX = 430
-SHOULDER_MIN = 200
+# Raised from 200: lower shoulder values reach farther down; this caps that ROM.
+SHOULDER_MIN = 360
 SHOULDER_MAX = SHOULDER_DEFAULT
-ELBOW_MIN = 120
+ELBOW_MIN = 140
 ELBOW_MAX = 500
-WRIST_MIN = 120
+WRIST_MIN = 130
 WRIST_MAX = 480
 CLAW_MIN = 80
 CLAW_MAX = 420
