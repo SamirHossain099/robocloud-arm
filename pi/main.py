@@ -18,6 +18,7 @@ from pi.input.voice import voice_control
 
 def main() -> None:
     os.environ["PYTHONWARNINGS"] = "ignore"
+    enable_voice = os.getenv("ROBOCLOUD_ENABLE_VOICE", "0") == "1"
 
     serial_io = SerialIO(port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE, timeout=1)
     serial_io.connect()
@@ -27,13 +28,17 @@ def main() -> None:
     executor = CommandExecutor(arm=arm, router=router)
 
     executor_thread = threading.Thread(target=executor.run, daemon=True)
-    voice_thread = threading.Thread(target=voice_control, args=(router,), daemon=True)
     keyboard_thread = threading.Thread(
         target=keyboard_control, args=(router,), daemon=True
     )
 
     executor_thread.start()
-    voice_thread.start()
+    if enable_voice:
+        voice_thread = threading.Thread(target=voice_control, args=(router,), daemon=True)
+        voice_thread.start()
+        print("Voice thread enabled")
+    else:
+        print("Voice thread disabled (set ROBOCLOUD_ENABLE_VOICE=1 to enable)")
     keyboard_thread.start()
 
     while True:
