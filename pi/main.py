@@ -18,13 +18,25 @@ from pi.input.keyboard import keyboard_control
 from pi.input.voice import voice_control
 from pi.perception.camera import Camera
 from pi.perception.stream import start_stream_server
+from pi.perception.tracker import ColorTracker
 
 
 def camera_view(camera):
+    tracker = ColorTracker()
+
     while True:
         frame = camera.get_frame()
         if frame is not None:
-            cv2.imshow("Live", frame)
+            result = tracker.track(frame)
+
+            if result:
+                cx, cy = result["center"]
+                x, y, w, h = result["bbox"]
+
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+
+            cv2.imshow("Tracking", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 

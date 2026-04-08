@@ -2,4 +2,5 @@ pyserial
 SpeechRecognition
 pyaudio
 opencv-python
+numpy
 -e .

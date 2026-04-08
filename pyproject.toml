@@ -12,6 +12,7 @@ dependencies = [
     "SpeechRecognition",
     "pyaudio",
     "opencv-python",
+    "numpy",
 ]
 
 [tool.setuptools]
