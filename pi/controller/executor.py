@@ -91,6 +91,12 @@ class CommandExecutor:
         if ctype == "keyboard_key":
             key = params.get("key", "")
             self._execute_keyboard_key(key)
+            return
+
+        if ctype == "vision_base_adjust":
+            delta = int(params.get("delta", 0))
+            self._execute_vision_base_adjust(delta)
+            return
 
     def _execute_keyboard_key(self, key: str) -> None:
         base, shoulder, elbow, wrist, claw = self.arm.get_pose()
@@ -140,5 +146,19 @@ class CommandExecutor:
 
         self.arm.move_to(
             (new_base, new_shoulder, new_elbow, new_wrist, new_claw),
+            interrupt_event=self.router.interrupt_event,
+        )
+
+    def _execute_vision_base_adjust(self, delta: int) -> None:
+        if delta == 0:
+            return
+
+        base, shoulder, elbow, wrist, claw = self.arm.get_pose()
+        new_base = _clamp(base + delta, BASE_MIN, BASE_MAX)
+        if new_base == base:
+            return
+
+        self.arm.move_to(
+            (new_base, shoulder, elbow, wrist, claw),
             interrupt_event=self.router.interrupt_event,
         )

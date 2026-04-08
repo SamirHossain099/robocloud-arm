@@ -27,6 +27,7 @@ from pi.input.voice import voice_control
 from pi.perception.camera import Camera
 from pi.perception.stream import start_stream_server
 from pi.perception.tracker import ColorTracker
+from pi.perception.vision_control import vision_base_control
 
 
 def camera_view(camera):
@@ -55,6 +56,7 @@ def main() -> None:
     enable_voice = os.getenv("ROBOCLOUD_ENABLE_VOICE", "0") == "1"
     enable_live_feed = os.getenv("ROBOCLOUD_ENABLE_LIVE_FEED", "0") == "1"
     enable_stream = os.getenv("ROBOCLOUD_ENABLE_STREAM", "0") == "1"
+    enable_vision_base = os.getenv("ROBOCLOUD_ENABLE_VISION_BASE", "0") == "1"
     stream_port = int(os.getenv("ROBOCLOUD_STREAM_PORT", "8080"))
 
     if control_transport == "network":
@@ -85,6 +87,9 @@ def main() -> None:
     keyboard_thread = threading.Thread(
         target=keyboard_control, args=(router,), daemon=True
     )
+    vision_thread = threading.Thread(
+        target=vision_base_control, args=(camera, router), daemon=True
+    )
 
     executor_thread.start()
     if enable_voice:
@@ -108,6 +113,11 @@ def main() -> None:
         print(f"Camera stream enabled at http://0.0.0.0:{stream_port}/stream")
     else:
         print("Camera stream disabled (set ROBOCLOUD_ENABLE_STREAM=1 to enable)")
+    if enable_vision_base:
+        vision_thread.start()
+        print("Vision base control enabled")
+    else:
+        print("Vision base control disabled (set ROBOCLOUD_ENABLE_VISION_BASE=1 to enable)")
 
     while True:
         time.sleep(1.0)

@@ -29,7 +29,7 @@ WiFiClient client;
 
 // UART control link from Raspberry Pi (TX/RX).
 // Adjust pins to match your ESP32-S3 board wiring if needed.
-HardwareSerial ArmSerial(1);
+HardwareSerial ArmSerial(0);
 const int ARM_UART_RX_PIN = 44;  // ESP RX <- Pi TX (J3 RX / U0RXD)
 const int ARM_UART_TX_PIN = 43;  // ESP TX -> Pi RX (J3 TX / U0TXD)
 const uint32_t ARM_UART_BAUD = 115200;
