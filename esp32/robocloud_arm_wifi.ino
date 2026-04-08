@@ -1,6 +1,7 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 #include <WiFi.h>
+#include <math.h>
 
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 
@@ -67,30 +68,63 @@ void writePose(const ArmPose &p) {
   writeJoint(CH_CLAW, p.claw);
 }
 
-void moveSmooth(const ArmPose &target, int d = 20) {
-  bool moving = true;
+// Ease-in-out in [0,1] — zero velocity at ends (smoother than linear 1-PWM stepping).
+static float smoothstep01(float t) {
+  if (t <= 0.0f) return 0.0f;
+  if (t >= 1.0f) return 1.0f;
+  return t * t * (3.0f - 2.0f * t);
+}
 
-  while (moving) {
-    moving = false;
+// How many interpolation samples: at least proportional to largest joint travel.
+static int motionStepsForPose(const ArmPose &from, const ArmPose &to) {
+  int db = abs(to.base - from.base);
+  int ds = abs(to.shoulder - from.shoulder);
+  int de = abs(to.elbow - from.elbow);
+  int dw = abs(to.wrist - from.wrist);
+  int dc = abs(to.claw - from.claw);
+  int m = db;
+  if (ds > m) m = ds;
+  if (de > m) m = de;
+  if (dw > m) m = dw;
+  if (dc > m) m = dc;
+  return m;
+}
 
-    if (currentPose.base < target.base) { currentPose.base++; moving = true; }
-    else if (currentPose.base > target.base) { currentPose.base--; moving = true; }
+// Interpolated move: same endpoints as before, smoother velocity profile (ESP-side).
+void moveSmooth(const ArmPose &target, int delayMs = 16) {
+  ArmPose start = currentPose;
 
-    if (currentPose.shoulder < target.shoulder) { currentPose.shoulder++; moving = true; }
-    else if (currentPose.shoulder > target.shoulder) { currentPose.shoulder--; moving = true; }
+  int steps = motionStepsForPose(start, target);
+  if (steps < 1) {
+    currentPose = target;
+    writePose(currentPose);
+    return;
+  }
 
-    if (currentPose.elbow < target.elbow) { currentPose.elbow++; moving = true; }
-    else if (currentPose.elbow > target.elbow) { currentPose.elbow--; moving = true; }
+  int db = target.base - start.base;
+  int ds = target.shoulder - start.shoulder;
+  int de = target.elbow - start.elbow;
+  int dw = target.wrist - start.wrist;
+  int dc = target.claw - start.claw;
 
-    if (currentPose.wrist < target.wrist) { currentPose.wrist++; moving = true; }
-    else if (currentPose.wrist > target.wrist) { currentPose.wrist--; moving = true; }
+  for (int i = 1; i <= steps; i++) {
+    float t = (float)i / (float)steps;
+    t = smoothstep01(t);
 
-    if (currentPose.claw < target.claw) { currentPose.claw++; moving = true; }
-    else if (currentPose.claw > target.claw) { currentPose.claw--; moving = true; }
+    currentPose.base = start.base + (int)roundf((float)db * t);
+    currentPose.shoulder = start.shoulder + (int)roundf((float)ds * t);
+    currentPose.elbow = start.elbow + (int)roundf((float)de * t);
+    currentPose.wrist = start.wrist + (int)roundf((float)dw * t);
+    currentPose.claw = start.claw + (int)roundf((float)dc * t);
 
     writePose(currentPose);
-    delay(d);
+    if (delayMs > 0) {
+      delay(delayMs);
+    }
   }
+
+  currentPose = target;
+  writePose(currentPose);
 }
 
 void replyLine(const String &msg) {

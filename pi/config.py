@@ -7,6 +7,13 @@ NETWORK_HOST = "192.168.1.50"
 NETWORK_PORT = 9000
 NETWORK_TIMEOUT = 1.0
 
+# ===== SERVO / CHANNEL MAP (PCA9685 channels, matches ESP sketch) =====
+# 11 — Base rotation (servo inside turntable)
+# 12 — Shoulder pitch (first joint above turntable)
+# 13 — Elbow
+# 14 — Wrist
+# 15 — Claw (open/close macros also use PWM targets on this channel)
+
 # ===== DEFAULT POSE =====
 BASE_DEFAULT = 307
 SHOULDER_DEFAULT = 440
