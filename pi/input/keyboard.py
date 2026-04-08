@@ -18,9 +18,8 @@ def getch() -> str:
 
 def keyboard_control(router: CommandRouter) -> None:
     """
-    Teleop (see executor keyboard handler for semantics):
-      A/D — pan (base 11), W/S — reach (12+13, wrist 14 → default),
-      F/B — wrist trim (14), O/C — claw (15), R — reset, Q — quit.
+      A/D — pan 11 | W/S — reach/ retract 12+13 (S stops at home) | F/B — up/down 14 |
+      O/C — claw 15 | R — reset | Q — quit.
     """
     while True:
         key = getch()

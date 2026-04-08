@@ -7,8 +7,10 @@ from pi.config import (
     BASE_MIN,
     CLAW_MAX,
     CLAW_MIN,
+    ELBOW_DEFAULT,
     ELBOW_MAX,
     ELBOW_MIN,
+    SHOULDER_DEFAULT,
     SHOULDER_MAX,
     SHOULDER_MIN,
     STEP,
@@ -110,8 +112,11 @@ class CommandExecutor:
         """
         Manual teleop (no vision):
         A/D — base 11 pan left/right
-        W/S — shoulder 12 + elbow 13 reach forward/back, wrist 14 locked to WRIST_DEFAULT
-        F/B — wrist 14 trim up/down (level / frame tweak)
+        W   — reach forward: shoulder 12 and elbow 13 both decrease (reverse of old W);
+              wrist 14 set to WRIST_DEFAULT
+        S   — retract toward reset: 12/13 move back toward SHOULDER_DEFAULT / ELBOW_DEFAULT
+              only (never past home on those joints); wrist 14 → WRIST_DEFAULT
+        F/B — up/down / level trim: wrist 14 only (camera axis)
         O/C — claw 15 open/close (incremental)
         R   — reset pose
         """
@@ -129,12 +134,17 @@ class CommandExecutor:
         elif key == "d":
             new_base -= STEP
         elif key == "w":
-            new_shoulder += STEP
-            new_elbow += STEP
-            new_wrist = WRIST_DEFAULT
-        elif key == "s":
             new_shoulder -= STEP
             new_elbow -= STEP
+            new_wrist = WRIST_DEFAULT
+        elif key == "s":
+            new_shoulder = min(shoulder + STEP, SHOULDER_DEFAULT)
+            if elbow < ELBOW_DEFAULT:
+                new_elbow = min(elbow + STEP, ELBOW_DEFAULT)
+            elif elbow > ELBOW_DEFAULT:
+                new_elbow = max(elbow - STEP, ELBOW_DEFAULT)
+            else:
+                new_elbow = elbow
             new_wrist = WRIST_DEFAULT
         elif key == "f":
             new_wrist += STEP
