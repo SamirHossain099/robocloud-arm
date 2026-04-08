@@ -20,6 +20,9 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 #define PWM_MIN 102
 #define PWM_MAX 512
 
+// More samples than max |ΔPWM| so smoothstep + integer rounding does not stair-step.
+#define MOTION_OVERSAMPLE 3.0f
+
 // Wi-Fi / TCP
 const char* WIFI_SSID = "Park East";
 const char* WIFI_PASS = "SilverGoldJackal";
@@ -94,11 +97,19 @@ static int motionStepsForPose(const ArmPose &from, const ArmPose &to) {
 void moveSmooth(const ArmPose &target, int delayMs = 16) {
   ArmPose start = currentPose;
 
-  int steps = motionStepsForPose(start, target);
-  if (steps < 1) {
+  int stepsRaw = motionStepsForPose(start, target);
+  if (stepsRaw < 1) {
     currentPose = target;
     writePose(currentPose);
     return;
+  }
+
+  int steps = (int)ceilf((float)stepsRaw * MOTION_OVERSAMPLE);
+  if (steps < 1) steps = 1;
+  int perDelay = 0;
+  if (delayMs > 0) {
+    perDelay = (int)roundf((float)delayMs / MOTION_OVERSAMPLE);
+    if (perDelay < 1) perDelay = 1;
   }
 
   int db = target.base - start.base;
@@ -118,8 +129,8 @@ void moveSmooth(const ArmPose &target, int delayMs = 16) {
     currentPose.claw = start.claw + (int)roundf((float)dc * t);
 
     writePose(currentPose);
-    if (delayMs > 0) {
-      delay(delayMs);
+    if (perDelay > 0) {
+      delay(perDelay);
     }
   }
 
