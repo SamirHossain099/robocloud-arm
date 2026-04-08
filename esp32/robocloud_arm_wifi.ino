@@ -1,0 +1,240 @@
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
+#include <WiFi.h>
+
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
+
+// I2C
+#define SDA_PIN 8
+#define SCL_PIN 9
+
+// Channels
+#define CH_BASE      11
+#define CH_SHOULDER  12
+#define CH_ELBOW     13
+#define CH_WRIST     14
+#define CH_CLAW      15
+
+// PWM limits
+#define PWM_MIN 102
+#define PWM_MAX 512
+
+// Wi-Fi / TCP
+const char* WIFI_SSID = "Park East";
+const char* WIFI_PASS = "SilverGoldJackal";
+const uint16_t TCP_PORT = 9000;
+
+WiFiServer server(TCP_PORT);
+WiFiClient client;
+
+struct ArmPose {
+  int base;
+  int shoulder;
+  int elbow;
+  int wrist;
+  int claw;
+};
+
+ArmPose currentPose;
+ArmPose poseHome;
+ArmPose poseReady;
+ArmPose poseReach;
+
+// ---------- Helpers ----------
+int clamp(int val, int minv, int maxv) {
+  if (val < minv) return minv;
+  if (val > maxv) return maxv;
+  return val;
+}
+
+void writeJoint(int ch, int val) {
+  val = clamp(val, PWM_MIN, PWM_MAX);
+  pwm.setPWM(ch, 0, val);
+}
+
+void writePose(const ArmPose &p) {
+  writeJoint(CH_BASE, p.base);
+  writeJoint(CH_SHOULDER, p.shoulder);
+  writeJoint(CH_ELBOW, p.elbow);
+  writeJoint(CH_WRIST, p.wrist);
+  writeJoint(CH_CLAW, p.claw);
+}
+
+void moveSmooth(const ArmPose &target, int d = 20) {
+  bool moving = true;
+
+  while (moving) {
+    moving = false;
+
+    if (currentPose.base < target.base) { currentPose.base++; moving = true; }
+    else if (currentPose.base > target.base) { currentPose.base--; moving = true; }
+
+    if (currentPose.shoulder < target.shoulder) { currentPose.shoulder++; moving = true; }
+    else if (currentPose.shoulder > target.shoulder) { currentPose.shoulder--; moving = true; }
+
+    if (currentPose.elbow < target.elbow) { currentPose.elbow++; moving = true; }
+    else if (currentPose.elbow > target.elbow) { currentPose.elbow--; moving = true; }
+
+    if (currentPose.wrist < target.wrist) { currentPose.wrist++; moving = true; }
+    else if (currentPose.wrist > target.wrist) { currentPose.wrist--; moving = true; }
+
+    if (currentPose.claw < target.claw) { currentPose.claw++; moving = true; }
+    else if (currentPose.claw > target.claw) { currentPose.claw--; moving = true; }
+
+    writePose(currentPose);
+    delay(d);
+  }
+}
+
+void replyLine(const String &msg) {
+  Serial.println(msg);
+  if (client && client.connected()) {
+    client.println(msg);
+  }
+}
+
+void handleCommand(String cmd) {
+  cmd.trim();
+  if (cmd.length() == 0) return;
+
+  if (cmd == "home") {
+    moveSmooth(poseHome);
+    replyLine("OK home");
+  }
+  else if (cmd == "ready") {
+    moveSmooth(poseReady);
+    replyLine("OK ready");
+  }
+  else if (cmd == "reach") {
+    moveSmooth(poseReach);
+    replyLine("OK reach");
+  }
+  else if (cmd == "open") {
+    ArmPose p = currentPose;
+    p.claw = 140;
+    moveSmooth(p, 10);
+    replyLine("OK open");
+  }
+  else if (cmd == "close") {
+    ArmPose p = currentPose;
+    p.claw = 320;
+    moveSmooth(p, 10);
+    replyLine("OK close");
+  }
+  else if (cmd == "status") {
+    String s = "STATUS ";
+    s += String(currentPose.base) + " ";
+    s += String(currentPose.shoulder) + " ";
+    s += String(currentPose.elbow) + " ";
+    s += String(currentPose.wrist) + " ";
+    s += String(currentPose.claw);
+    replyLine(s);
+  }
+  else if (cmd.startsWith("set")) {
+    int ch, val;
+    if (sscanf(cmd.c_str(), "set %d %d", &ch, &val) == 2) {
+      writeJoint(ch, val);
+
+      if (ch == 11) currentPose.base = val;
+      if (ch == 12) currentPose.shoulder = val;
+      if (ch == 13) currentPose.elbow = val;
+      if (ch == 14) currentPose.wrist = val;
+      if (ch == 15) currentPose.claw = val;
+
+      replyLine("OK set");
+    } else {
+      replyLine("ERR set");
+    }
+  }
+  else {
+    replyLine("ERR unknown");
+  }
+}
+
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  Serial.print("Connecting WiFi");
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (millis() - t0 > 30000) {
+      Serial.println("\nWiFi connect timeout, retrying...");
+      WiFi.disconnect(true, true);
+      delay(500);
+      WiFi.begin(WIFI_SSID, WIFI_PASS);
+      t0 = millis();
+    }
+  }
+
+  Serial.println();
+  Serial.print("WiFi connected, IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+// ---------- Setup ----------
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  pwm.begin();
+  pwm.setPWMFreq(50);
+
+  delay(500);
+
+  // Poses (home adjusted to match Pi reset/default pose)
+  poseHome = {307, 440, 150, 160, 320};
+
+  poseReady = {
+    307,
+    440,
+    150,
+    180,
+    140
+  };
+
+  poseReach = {
+    307,
+    420,
+    200,
+    220,
+    140
+  };
+
+  currentPose = poseHome;
+  writePose(currentPose);
+
+  connectWiFi();
+  server.begin();
+  server.setNoDelay(true);
+
+  Serial.print("TCP server listening on port ");
+  Serial.println(TCP_PORT);
+  Serial.println("READY");
+}
+
+// ---------- Loop ----------
+void loop() {
+  // Accept one client at a time
+  if (!client || !client.connected()) {
+    WiFiClient newClient = server.available();
+    if (newClient) {
+      if (client && client.connected()) {
+        client.stop();
+      }
+      client = newClient;
+      client.setNoDelay(true);
+      Serial.print("Client connected: ");
+      Serial.println(client.remoteIP());
+      client.println("READY");
+    }
+  }
+
+  // Network command input (serial command input intentionally disabled)
+  if (client && client.connected() && client.available()) {
+    String cmd = client.readStringUntil('\n');
+    handleCommand(cmd);
+  }
+}
