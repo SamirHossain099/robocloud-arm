@@ -5,10 +5,10 @@ import numpy as np
 class ColorTracker:
     def __init__(self):
         # Red color range (HSV)
-        self.lower1 = np.array([0, 120, 70])
-        self.upper1 = np.array([10, 255, 255])
+        self.lower1 = np.array([0, 80, 50])
+        self.upper1 = np.array([15, 255, 255])
 
-        self.lower2 = np.array([170, 120, 70])
+        self.lower2 = np.array([165, 80, 50])
         self.upper2 = np.array([180, 255, 255])
 
     def track(self, frame):
@@ -33,7 +33,7 @@ class ColorTracker:
         # Largest object
         largest = max(contours, key=cv2.contourArea)
 
-        if cv2.contourArea(largest) < 500:
+        if cv2.contourArea(largest) < 150:
             return None
 
         x, y, w, h = cv2.boundingRect(largest)
