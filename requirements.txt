@@ -3,4 +3,5 @@ SpeechRecognition
 pyaudio
 opencv-python
 numpy
+readchar
 -e .

@@ -117,6 +117,7 @@ class CommandExecutor:
         W/S — up/down: wrist 14 only
         O/C — claw 15
         R   — reset
+        P   — print current servo PWMs (no move), for hard-coding poses
         """
         base, shoulder, elbow, wrist, claw = self.arm.get_pose()
         new_base, new_shoulder, new_elbow, new_wrist, new_claw = (
@@ -147,8 +148,12 @@ class CommandExecutor:
             new_claw -= STEP * 3
         elif key == "c":
             new_claw += STEP * 3
+        elif key == "p":
+            self._print_servo_pose()
+            return
         elif key == "r":
             self.arm.reset_pose(self.router.interrupt_event)
+            self._print_servo_pose()
             return
         else:
             return
@@ -163,6 +168,15 @@ class CommandExecutor:
             (new_base, new_shoulder, new_elbow, new_wrist, new_claw),
             interrupt_event=self.router.interrupt_event,
         )
+        self._print_servo_pose()
+
+    def _print_servo_pose(self) -> None:
+        b, sh, e, w, cl = self.arm.get_pose()
+        print(
+            f"SERVOS ch11={b} ch12={sh} ch13={e} ch14={w} ch15={cl}",
+            flush=True,
+        )
+        print(f"  setall {b} {sh} {e} {w} {cl}", flush=True)
 
     def _execute_vision_base_adjust(self, delta: int) -> None:
         if delta == 0:

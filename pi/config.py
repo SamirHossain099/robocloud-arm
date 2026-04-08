@@ -34,3 +34,17 @@ WRIST_MIN = 120
 WRIST_MAX = 480
 CLAW_MIN = 80
 CLAW_MAX = 420
+
+# ----- IK CLI (pi.ik_controller, pi.ik_math) -----
+L1_MM = L2_MM = L3_MM = 115
+HOME_IK_X = 60.0
+HOME_IK_Y = 200.0
+IK_STEP_MM = 5
+IK_WRIST_STEP_DEG = 5
+IK_BASE_STEP_PWM = 10
+IK_CLAW_STEP_PWM = 12
+IK_MOVE_STEPS = 20
+IK_MOVE_DELAY_MS = 50
+IK_JOYSTICK_SMOOTH_STEPS = 1  # 1 = no interp; try 3 for softer joystick
+CLAW_OPEN_PWM = 140
+CLAW_CLOSE_PWM = 320
