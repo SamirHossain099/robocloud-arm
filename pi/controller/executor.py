@@ -10,6 +10,7 @@ from pi.config import (
     ELBOW_DEFAULT,
     ELBOW_MAX,
     ELBOW_MIN,
+    IK_CARTESIAN_STEP_MM,
     SHOULDER_DEFAULT,
     SHOULDER_MAX,
     SHOULDER_MIN,
@@ -18,6 +19,7 @@ from pi.config import (
     WRIST_MIN,
 )
 from pi.controller.arm import Arm
+from pi.controller import kinematics as kin
 from pi.logutil import vprint
 
 
@@ -118,6 +120,8 @@ class CommandExecutor:
         O/C — claw 15
         R   — reset
         P   — print current servo PWMs (no move), for hard-coding poses
+        T/G — IK nudge tip along +X / −X (mm, in shoulder plane)
+        Y/H — IK nudge tip along +Z / −Z (mm, up / down in plane)
         """
         base, shoulder, elbow, wrist, claw = self.arm.get_pose()
         new_base, new_shoulder, new_elbow, new_wrist, new_claw = (
@@ -151,6 +155,18 @@ class CommandExecutor:
         elif key == "p":
             self._print_servo_pose()
             return
+        elif key in {"t", "g", "y", "h"}:
+            step = float(IK_CARTESIAN_STEP_MM)
+            dx = step if key == "t" else (-step if key == "g" else 0.0)
+            dz = step if key == "y" else (-step if key == "h" else 0.0)
+            ik = kin.nudge_tip(shoulder, elbow, dx, dz)
+            if ik is None:
+                print("IK: unreachable pose (try F/B joint teleop or tune IK_* in config)", flush=True)
+                return
+            new_shoulder, new_elbow = ik
+            new_base = base
+            new_wrist = wrist
+            new_claw = claw
         elif key == "r":
             self.arm.reset_pose(self.router.interrupt_event)
             self._print_servo_pose()

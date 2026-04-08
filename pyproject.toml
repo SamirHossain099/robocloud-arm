@@ -13,7 +13,6 @@ dependencies = [
     "pyaudio",
     "opencv-python",
     "numpy",
-    "readchar",
 ]
 
 [tool.setuptools]

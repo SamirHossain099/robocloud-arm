@@ -19,7 +19,8 @@ def getch() -> str:
 def keyboard_control(router: CommandRouter) -> None:
     """
       A/D — pan 11 | F — fwd 12−/13+, B — back 12+/13− (B capped to home) |
-      W/S — up/down 14 | O/C — claw 15 | P — print servos | R — reset | Q — quit.
+      W/S — up/down 14 | T/G/Y/H — IK tip ±X ±Z | O/C — claw |
+      P — print | R — reset | Q — quit.
     """
     while True:
         key = getch()
@@ -27,5 +28,5 @@ def keyboard_control(router: CommandRouter) -> None:
         if key == "q":
             break
 
-        if key in {"a", "d", "w", "s", "f", "b", "o", "c", "r", "p"}:
+        if key in {"a", "d", "w", "s", "f", "b", "o", "c", "r", "p", "t", "g", "y", "h"}:
             router.submit(Arm.command("keyboard_key", {"key": key}, "low"))

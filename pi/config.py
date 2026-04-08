@@ -35,16 +35,16 @@ WRIST_MAX = 480
 CLAW_MIN = 80
 CLAW_MAX = 420
 
-# ----- IK CLI (pi.ik_controller, pi.ik_math) -----
-L1_MM = L2_MM = L3_MM = 115
-HOME_IK_X = 60.0
-HOME_IK_Y = 200.0
-IK_STEP_MM = 5
-IK_WRIST_STEP_DEG = 5
-IK_BASE_STEP_PWM = 10
-IK_CLAW_STEP_PWM = 12
-IK_MOVE_STEPS = 20
-IK_MOVE_DELAY_MS = 50
-IK_JOYSTICK_SMOOTH_STEPS = 1  # 1 = no interp; try 3 for softer joystick
-CLAW_OPEN_PWM = 140
-CLAW_CLOSE_PWM = 320
+# ===== INVERSE KINEMATICS (planar 2R: shoulder + elbow in vertical X–Z plane) =====
+# X: horizontal reach (mm) from shoulder pivot along "forward", Z: up (mm).
+# Calibrate IK_* on your hardware: print poses (P) at known configs, then tune.
+IK_LINK_L1_MM = 130.0
+IK_LINK_L2_MM = 120.0
+# Joint angles (rad) at the PWM home pose below (nominal — tune until FK matches reality).
+IK_SHOULDER_HOME_RAD = 1.15
+IK_ELBOW_HOME_RAD = -0.55
+# Linear map: pwm ≈ DEFAULT + PWM_PER_RAD * (theta - HOME_RAD)
+IK_SHOULDER_PWM_PER_RAD = -52.0
+IK_ELBOW_PWM_PER_RAD = 42.0
+IK_CARTESIAN_STEP_MM = 6.0
+IK_ELBOW_UP = True
