@@ -1,6 +1,12 @@
 import os
+import sys
 import threading
 import time
+from pathlib import Path
+
+if __package__ is None or __package__ == "":
+    # Allow running as: python pi/main.py
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pi.config import SERIAL_BAUDRATE, SERIAL_PORT
 from pi.controller.arm import Arm
