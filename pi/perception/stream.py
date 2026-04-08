@@ -5,7 +5,7 @@ import time
 import cv2
 
 from pi.perception.tracker import ColorTracker
-from pi.perception.vision_control import get_vision_state
+from pi.perception.vision_control import compute_base_adjust
 
 
 class _StreamingHandler(server.BaseHTTPRequestHandler):
@@ -40,11 +40,25 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
 
             result = tracker.track(frame)
             output = frame.copy()
+            frame_h, frame_w = output.shape[:2]
+            frame_center_x = frame_w // 2
+
+            # Reference line for horizontal centering target.
+            cv2.line(
+                output,
+                (frame_center_x, 0),
+                (frame_center_x, frame_h - 1),
+                (255, 255, 0),
+                1,
+            )
 
             if result:
                 cx, cy = result["center"]
                 x, y, w, h = result["bbox"]
                 area = int(result["area"])
+                error = cx - frame_center_x
+                adjust = compute_base_adjust(cx, frame_w)
+                vision_delta = -adjust
 
                 now = time.time()
                 if now - last_log_ts >= 0.5:
@@ -63,6 +77,16 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                     2,
                     cv2.LINE_AA,
                 )
+                cv2.putText(
+                    output,
+                    f"cx={cx} center={frame_center_x} err={error} base_delta={vision_delta}",
+                    (10, 58),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55,
+                    (0, 255, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
             else:
                 cv2.putText(
                     output,
@@ -71,43 +95,6 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7,
                     (0, 0, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
-
-            vision = get_vision_state()
-            if vision.get("tracking"):
-                err = vision.get("error")
-                delta = vision.get("delta_cmd")
-                vcx = vision.get("cx")
-                cv2.putText(
-                    output,
-                    f"CX={vcx} ERR={err} DELTA={delta}",
-                    (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
-                    (255, 255, 0),
-                    2,
-                    cv2.LINE_AA,
-                )
-                cv2.putText(
-                    output,
-                    "BASE CENTERING: ON",
-                    (10, 88),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
-                    (0, 255, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
-            else:
-                cv2.putText(
-                    output,
-                    "BASE CENTERING: IDLE",
-                    (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
-                    (180, 180, 180),
                     2,
                     cv2.LINE_AA,
                 )
