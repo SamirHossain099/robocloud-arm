@@ -10,12 +10,44 @@ from pi.perception.vision_control import compute_base_adjust
 
 class _StreamingHandler(server.BaseHTTPRequestHandler):
     camera = None
+    
+    def log_message(self, format, *args):
+        # Keep HTTP logs quiet in long-running stream mode.
+        return
 
     def do_GET(self):
         if self.path == "/":
             self.send_response(301)
             self.send_header("Location", "/stream")
             self.end_headers()
+            return
+
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"ok\n")
+            return
+
+        if self.path == "/snapshot.jpg":
+            frame = self.camera.get_frame() if self.camera else None
+            if frame is None:
+                self.send_error(503, "No camera frame available")
+                self.end_headers()
+                return
+
+            ok, jpg = cv2.imencode(".jpg", frame)
+            if not ok:
+                self.send_error(500, "Failed to encode frame")
+                self.end_headers()
+                return
+
+            payload = jpg.tobytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
             return
 
         if self.path != "/stream":
@@ -36,6 +68,7 @@ class _StreamingHandler(server.BaseHTTPRequestHandler):
         while True:
             frame = self.camera.get_frame() if self.camera else None
             if frame is None:
+                time.sleep(0.01)
                 continue
 
             result = tracker.track(frame)
