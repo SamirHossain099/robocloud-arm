@@ -130,6 +130,26 @@ void handleCommand(String cmd) {
     s += String(currentPose.claw);
     replyLine(s);
   }
+  else if (cmd.startsWith("setall")) {
+    int b, s, e, w, c;
+    if (sscanf(cmd.c_str(), "setall %d %d %d %d %d", &b, &s, &e, &w, &c) == 5) {
+      writeJoint(CH_BASE, b);
+      writeJoint(CH_SHOULDER, s);
+      writeJoint(CH_ELBOW, e);
+      writeJoint(CH_WRIST, w);
+      writeJoint(CH_CLAW, c);
+
+      currentPose.base = b;
+      currentPose.shoulder = s;
+      currentPose.elbow = e;
+      currentPose.wrist = w;
+      currentPose.claw = c;
+
+      replyLine("OK setall");
+    } else {
+      replyLine("ERR setall");
+    }
+  }
   else if (cmd.startsWith("set")) {
     int ch, val;
     if (sscanf(cmd.c_str(), "set %d %d", &ch, &val) == 2) {
