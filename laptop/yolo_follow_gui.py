@@ -171,6 +171,7 @@ class YoloFollowApp:
                         delta = 0
                         if abs(error) >= self.deadband:
                             delta = _clamp(int(error * self.kp), -self.max_delta, self.max_delta)
+                            delta = -delta
                         self._send_delta(delta)
                         self.last_command_ts = now
             else:
