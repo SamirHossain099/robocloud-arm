@@ -522,7 +522,7 @@ void setup() {
   delay(500);
 
   // Poses (home adjusted to match Pi reset/default pose)
-  poseHome = {307, 440, 150, 160, 320};
+  poseHome = {307, 440, 150, 196, 320};
 
   poseReady = {
     307,
