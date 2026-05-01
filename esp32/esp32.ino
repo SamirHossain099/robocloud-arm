@@ -19,6 +19,7 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 // PWM limits
 #define PWM_MIN 102
 #define PWM_MAX 512
+#define CLAW_MIN 125
 
 // More samples than max |ΔPWM| so smoothstep + integer rounding does not stair-step.
 #define MOTION_OVERSAMPLE 3.0f
@@ -74,8 +75,22 @@ int clamp(int val, int minv, int maxv) {
   return val;
 }
 
+int minForChannel(int ch) {
+  if (ch == CH_CLAW) return CLAW_MIN;
+  return PWM_MIN;
+}
+
+int maxForChannel(int ch) {
+  (void)ch;
+  return PWM_MAX;
+}
+
+int clampForChannel(int ch, int val) {
+  return clamp(val, minForChannel(ch), maxForChannel(ch));
+}
+
 void writeJoint(int ch, int val) {
-  val = clamp(val, PWM_MIN, PWM_MAX);
+  val = clampForChannel(ch, val);
   pwm.setPWM(ch, 0, val);
 }
 
@@ -142,7 +157,7 @@ void stopJointMotion(JointMotion &jm) {
 void startJointMotion(JointMotion &jm, int target, String speed = "medium") {
   int* p = posePtrByChannel(jm.channel);
   if (!p) return;
-  target = clamp(target, PWM_MIN, PWM_MAX);
+  target = clampForChannel(jm.channel, target);
   configureJointMotionProfile(jm, speed);
   jm.target = target;
   jm.lastMs = 0;
@@ -445,6 +460,11 @@ void handleCommand(String cmd) {
     int b, s, e, w, c;
     if (sscanf(cmd.c_str(), "setall %d %d %d %d %d", &b, &s, &e, &w, &c) == 5) {
       stopAllJointMotions();
+      b = clampForChannel(CH_BASE, b);
+      s = clampForChannel(CH_SHOULDER, s);
+      e = clampForChannel(CH_ELBOW, e);
+      w = clampForChannel(CH_WRIST, w);
+      c = clampForChannel(CH_CLAW, c);
       writeJoint(CH_BASE, b);
       writeJoint(CH_SHOULDER, s);
       writeJoint(CH_ELBOW, e);
@@ -469,6 +489,7 @@ void handleCommand(String cmd) {
       if (jm != nullptr) {
         stopJointMotion(*jm);
       }
+      val = clampForChannel(ch, val);
       writeJoint(ch, val);
 
       if (ch == 11) currentPose.base = val;
