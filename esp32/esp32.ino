@@ -25,8 +25,16 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
 #define MOTION_OVERSAMPLE 3.0f
 
 // Wi-Fi / TCP
-const char* WIFI_SSID = "Park East";
-const char* WIFI_PASS = "SilverGoldJackal";
+struct WiFiCredential {
+  const char* ssid;
+  const char* pass;
+};
+
+const WiFiCredential WIFI_CREDENTIALS[] = {
+  {"Park East", "SilverGoldJackal"},
+  {"TTUguest", "fearthestache"},
+};
+const int WIFI_CREDENTIALS_COUNT = sizeof(WIFI_CREDENTIALS) / sizeof(WIFI_CREDENTIALS[0]);
 const uint16_t TCP_PORT = 9000;
 
 WiFiServer server(TCP_PORT);
@@ -508,27 +516,42 @@ void handleCommand(String cmd) {
   }
 }
 
-void connectWiFi() {
+bool connectWiFi() {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  const unsigned long maxConnectMs = 15000;
 
-  Serial.print("Connecting WiFi");
-  unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-    if (millis() - t0 > 30000) {
-      Serial.println("\nWiFi connect timeout, retrying...");
-      WiFi.disconnect(true, true);
+  for (int i = 0; i < WIFI_CREDENTIALS_COUNT; ++i) {
+    const char* ssid = WIFI_CREDENTIALS[i].ssid;
+    const char* pass = WIFI_CREDENTIALS[i].pass;
+
+    Serial.print("Connecting WiFi SSID: ");
+    Serial.println(ssid);
+    WiFi.begin(ssid, pass);
+
+    unsigned long t0 = millis();
+    while (WiFi.status() != WL_CONNECTED) {
       delay(500);
-      WiFi.begin(WIFI_SSID, WIFI_PASS);
-      t0 = millis();
+      Serial.print(".");
+      if (millis() - t0 > maxConnectMs) {
+        Serial.println("\nWiFi attempt timeout.");
+        WiFi.disconnect(true, true);
+        delay(300);
+        break;
+      }
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println();
+      Serial.print("WiFi connected (");
+      Serial.print(ssid);
+      Serial.print("), IP: ");
+      Serial.println(WiFi.localIP());
+      return true;
     }
   }
 
-  Serial.println();
-  Serial.print("WiFi connected, IP: ");
-  Serial.println(WiFi.localIP());
+  Serial.println("WiFi connect failed for all SSIDs, continuing with UART control only.");
+  return false;
 }
 
 // ---------- Setup ----------
@@ -564,12 +587,15 @@ void setup() {
   currentPose = poseHome;
   writePose(currentPose);
 
-  connectWiFi();
-  server.begin();
-  server.setNoDelay(true);
-
-  Serial.print("TCP server listening on port ");
-  Serial.println(TCP_PORT);
+  bool wifiOk = connectWiFi();
+  if (wifiOk) {
+    server.begin();
+    server.setNoDelay(true);
+    Serial.print("TCP server listening on port ");
+    Serial.println(TCP_PORT);
+  } else {
+    Serial.println("TCP server disabled (no WiFi), UART control still active.");
+  }
   Serial.print("UART control ready on RX=");
   Serial.print(ARM_UART_RX_PIN);
   Serial.print(" TX=");
