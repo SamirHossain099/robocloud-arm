@@ -12,6 +12,12 @@ from pi.config import (
     BASE_MAX,
     BASE_MIN,
     BASE_DEFAULT,
+    SHOULDER_DEFAULT,
+    SHOULDER_MIN,
+    SHOULDER_MAX,
+    ELBOW_DEFAULT,
+    ELBOW_MIN,
+    ELBOW_MAX,
     WRIST_DEFAULT,
     WRIST_MIN,
     WRIST_MAX,
@@ -131,12 +137,18 @@ def _udp_control_loop(
     port: int,
     base_min: int,
     base_max: int,
+    shoulder_min: int,
+    shoulder_max: int,
+    elbow_min: int,
+    elbow_max: int,
     wrist_min: int,
     wrist_max: int,
     claw_min: int,
     claw_max: int,
     use_movebase: bool,
     movebase_speed: str,
+    use_moveshoulder: bool,
+    use_moveelbow: bool,
     use_movewrist: bool,
     use_moveclaw: bool,
 ):
@@ -145,9 +157,13 @@ def _udp_control_loop(
     sock.settimeout(1.0)
 
     base_value = BASE_DEFAULT
+    shoulder_value = SHOULDER_DEFAULT
+    elbow_value = ELBOW_DEFAULT
     wrist_value = WRIST_DEFAULT
     claw_value = CLAW_DEFAULT
     serial_io.send_cmd(f"set 11 {base_value}")
+    serial_io.send_cmd(f"set 12 {shoulder_value}")
+    serial_io.send_cmd(f"set 13 {elbow_value}")
     serial_io.send_cmd(f"set 14 {wrist_value}")
     serial_io.send_cmd(f"set 15 {claw_value}")
     print(f"Control UDP listening on {host}:{port}")
@@ -166,6 +182,8 @@ def _udp_control_loop(
             continue
 
         updated = False
+        shoulder_updated = False
+        elbow_updated = False
         wrist_updated = False
         claw_updated = False
         stop_requested = False
@@ -186,6 +204,18 @@ def _udp_control_loop(
         elif "wrist_delta" in msg:
             wrist_value = _clamp(wrist_value + int(msg["wrist_delta"]), wrist_min, wrist_max)
             wrist_updated = True
+        if "shoulder" in msg:
+            shoulder_value = _clamp(int(msg["shoulder"]), shoulder_min, shoulder_max)
+            shoulder_updated = True
+        elif "shoulder_delta" in msg:
+            shoulder_value = _clamp(shoulder_value + int(msg["shoulder_delta"]), shoulder_min, shoulder_max)
+            shoulder_updated = True
+        if "elbow" in msg:
+            elbow_value = _clamp(int(msg["elbow"]), elbow_min, elbow_max)
+            elbow_updated = True
+        elif "elbow_delta" in msg:
+            elbow_value = _clamp(elbow_value + int(msg["elbow_delta"]), elbow_min, elbow_max)
+            elbow_updated = True
         if "claw" in msg:
             claw_value = _clamp(int(msg["claw"]), claw_min, claw_max)
             claw_updated = True
@@ -199,7 +229,7 @@ def _udp_control_loop(
         if "speed" in msg:
             speed = str(msg["speed"]).strip() or movebase_speed
 
-        if stop_requested and (use_movebase or use_movewrist or use_moveclaw):
+        if stop_requested and (use_movebase or use_moveshoulder or use_moveelbow or use_movewrist or use_moveclaw):
             serial_io.send_cmd("stop")
 
         if updated:
@@ -213,6 +243,18 @@ def _udp_control_loop(
                 serial_io.send_cmd(f"movewrist {wrist_value} {speed}")
             else:
                 serial_io.send_cmd(f"set 14 {wrist_value}")
+
+        if shoulder_updated:
+            if use_moveshoulder:
+                serial_io.send_cmd(f"moveshoulder {shoulder_value} {speed}")
+            else:
+                serial_io.send_cmd(f"set 12 {shoulder_value}")
+
+        if elbow_updated:
+            if use_moveelbow:
+                serial_io.send_cmd(f"moveelbow {elbow_value} {speed}")
+            else:
+                serial_io.send_cmd(f"set 13 {elbow_value}")
 
         if claw_updated:
             if use_moveclaw:
@@ -234,6 +276,8 @@ def main() -> None:
     control_port = int(os.getenv("ROBOCLOUD_CONTROL_PORT", "9999"))
     use_movebase = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEBASE", "1").strip() not in {"0", "false", "False"}
     movebase_speed = os.getenv("ROBOCLOUD_MOVEBASE_SPEED", "fast")
+    use_moveshoulder = os.getenv("ROBOCLOUD_CONTROL_USE_MOVESHOULDER", "1").strip() not in {"0", "false", "False"}
+    use_moveelbow = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEELBOW", "1").strip() not in {"0", "false", "False"}
     use_movewrist = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEWRIST", "1").strip() not in {"0", "false", "False"}
     use_moveclaw = os.getenv("ROBOCLOUD_CONTROL_USE_MOVECLAW", "1").strip() not in {"0", "false", "False"}
 
@@ -257,12 +301,18 @@ def main() -> None:
         port=control_port,
         base_min=BASE_MIN,
         base_max=BASE_MAX,
+        shoulder_min=SHOULDER_MIN,
+        shoulder_max=SHOULDER_MAX,
+        elbow_min=ELBOW_MIN,
+        elbow_max=ELBOW_MAX,
         wrist_min=WRIST_MIN,
         wrist_max=WRIST_MAX,
         claw_min=CLAW_MIN,
         claw_max=CLAW_MAX,
         use_movebase=use_movebase,
         movebase_speed=movebase_speed,
+        use_moveshoulder=use_moveshoulder,
+        use_moveelbow=use_moveelbow,
         use_movewrist=use_movewrist,
         use_moveclaw=use_moveclaw,
     )
