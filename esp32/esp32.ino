@@ -1,1 +1,423 @@
-#include "robocloud_arm_wifi.ino"
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
+#include <WiFi.h>
+#include <math.h>
+
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x40);
+
+// I2C
+#define SDA_PIN 8
+#define SCL_PIN 9
+
+// Channels
+#define CH_BASE      11
+#define CH_SHOULDER  12
+#define CH_ELBOW     13
+#define CH_WRIST     14
+#define CH_CLAW      15
+
+// PWM limits
+#define PWM_MIN 102
+#define PWM_MAX 512
+
+// More samples than max |ΔPWM| so smoothstep + integer rounding does not stair-step.
+#define MOTION_OVERSAMPLE 3.0f
+
+// Wi-Fi / TCP
+const char* WIFI_SSID = "Park East";
+const char* WIFI_PASS = "SilverGoldJackal";
+const uint16_t TCP_PORT = 9000;
+
+WiFiServer server(TCP_PORT);
+WiFiClient client;
+
+// UART control link from Raspberry Pi (TX/RX).
+// Adjust pins to match your ESP32-S3 board wiring if needed.
+HardwareSerial ArmSerial(0);
+const int ARM_UART_RX_PIN = 44;  // ESP RX <- Pi TX (J3 RX / U0RXD)
+const int ARM_UART_TX_PIN = 43;  // ESP TX -> Pi RX (J3 TX / U0TXD)
+const uint32_t ARM_UART_BAUD = 115200;
+
+struct ArmPose {
+  int base;
+  int shoulder;
+  int elbow;
+  int wrist;
+  int claw;
+};
+
+ArmPose currentPose;
+ArmPose poseHome;
+ArmPose poseReady;
+ArmPose poseReach;
+
+// Non-blocking base motion state (for immediate stop/override behavior).
+bool baseMotionActive = false;
+int baseMotionTarget = 0;
+int baseMotionStep = 4;
+int baseMotionIntervalMs = 10;
+unsigned long baseMotionLastMs = 0;
+
+// ---------- Helpers ----------
+int clamp(int val, int minv, int maxv) {
+  if (val < minv) return minv;
+  if (val > maxv) return maxv;
+  return val;
+}
+
+void writeJoint(int ch, int val) {
+  val = clamp(val, PWM_MIN, PWM_MAX);
+  pwm.setPWM(ch, 0, val);
+}
+
+void writePose(const ArmPose &p) {
+  writeJoint(CH_BASE, p.base);
+  writeJoint(CH_SHOULDER, p.shoulder);
+  writeJoint(CH_ELBOW, p.elbow);
+  writeJoint(CH_WRIST, p.wrist);
+  writeJoint(CH_CLAW, p.claw);
+}
+
+void configureBaseMotionProfile(String speed) {
+  speed.trim();
+  speed.toLowerCase();
+  if (speed == "slow") {
+    baseMotionStep = 2;
+    baseMotionIntervalMs = 18;
+  } else if (speed == "fast") {
+    baseMotionStep = 8;
+    baseMotionIntervalMs = 6;
+  } else {
+    // "medium" default
+    baseMotionStep = 4;
+    baseMotionIntervalMs = 10;
+  }
+}
+
+void stopBaseMotion() {
+  baseMotionActive = false;
+  baseMotionTarget = currentPose.base;
+}
+
+void startBaseMotion(int target, String speed = "medium") {
+  target = clamp(target, PWM_MIN, PWM_MAX);
+  configureBaseMotionProfile(speed);
+  baseMotionTarget = target;
+  baseMotionLastMs = 0;
+  baseMotionActive = (baseMotionTarget != currentPose.base);
+}
+
+void updateBaseMotion() {
+  if (!baseMotionActive) return;
+
+  unsigned long now = millis();
+  if (baseMotionLastMs != 0 && (now - baseMotionLastMs) < (unsigned long)baseMotionIntervalMs) {
+    return;
+  }
+  baseMotionLastMs = now;
+
+  int cur = currentPose.base;
+  if (cur == baseMotionTarget) {
+    stopBaseMotion();
+    return;
+  }
+
+  int dir = (baseMotionTarget > cur) ? 1 : -1;
+  int next = cur + dir * baseMotionStep;
+  if ((dir > 0 && next > baseMotionTarget) || (dir < 0 && next < baseMotionTarget)) {
+    next = baseMotionTarget;
+  }
+
+  currentPose.base = next;
+  writeJoint(CH_BASE, currentPose.base);
+
+  if (currentPose.base == baseMotionTarget) {
+    stopBaseMotion();
+  }
+}
+
+// Ease-in-out in [0,1] — zero velocity at ends (smoother than linear 1-PWM stepping).
+static float smoothstep01(float t) {
+  if (t <= 0.0f) return 0.0f;
+  if (t >= 1.0f) return 1.0f;
+  return t * t * (3.0f - 2.0f * t);
+}
+
+// How many interpolation samples: at least proportional to largest joint travel.
+static int motionStepsForPose(const ArmPose &from, const ArmPose &to) {
+  int db = abs(to.base - from.base);
+  int ds = abs(to.shoulder - from.shoulder);
+  int de = abs(to.elbow - from.elbow);
+  int dw = abs(to.wrist - from.wrist);
+  int dc = abs(to.claw - from.claw);
+  int m = db;
+  if (ds > m) m = ds;
+  if (de > m) m = de;
+  if (dw > m) m = dw;
+  if (dc > m) m = dc;
+  return m;
+}
+
+// Interpolated move: same endpoints as before, smoother velocity profile (ESP-side).
+void moveSmooth(const ArmPose &target, int delayMs = 16) {
+  ArmPose start = currentPose;
+
+  int stepsRaw = motionStepsForPose(start, target);
+  if (stepsRaw < 1) {
+    currentPose = target;
+    writePose(currentPose);
+    return;
+  }
+
+  int steps = (int)ceilf((float)stepsRaw * MOTION_OVERSAMPLE);
+  if (steps < 1) steps = 1;
+  int perDelay = 0;
+  if (delayMs > 0) {
+    perDelay = (int)roundf((float)delayMs / MOTION_OVERSAMPLE);
+    if (perDelay < 1) perDelay = 1;
+  }
+
+  int db = target.base - start.base;
+  int ds = target.shoulder - start.shoulder;
+  int de = target.elbow - start.elbow;
+  int dw = target.wrist - start.wrist;
+  int dc = target.claw - start.claw;
+
+  for (int i = 1; i <= steps; i++) {
+    float t = (float)i / (float)steps;
+    t = smoothstep01(t);
+
+    currentPose.base = start.base + (int)roundf((float)db * t);
+    currentPose.shoulder = start.shoulder + (int)roundf((float)ds * t);
+    currentPose.elbow = start.elbow + (int)roundf((float)de * t);
+    currentPose.wrist = start.wrist + (int)roundf((float)dw * t);
+    currentPose.claw = start.claw + (int)roundf((float)dc * t);
+
+    writePose(currentPose);
+    if (perDelay > 0) {
+      delay(perDelay);
+    }
+  }
+
+  currentPose = target;
+  writePose(currentPose);
+}
+
+void replyLine(const String &msg) {
+  Serial.println(msg);
+  if (client && client.connected()) {
+    client.println(msg);
+  }
+  ArmSerial.println(msg);
+}
+
+void handleCommand(String cmd) {
+  cmd.trim();
+  if (cmd.length() == 0) return;
+
+  if (cmd == "home") {
+    stopBaseMotion();
+    moveSmooth(poseHome);
+    replyLine("OK home");
+  }
+  else if (cmd == "ready") {
+    stopBaseMotion();
+    moveSmooth(poseReady);
+    replyLine("OK ready");
+  }
+  else if (cmd == "reach") {
+    stopBaseMotion();
+    moveSmooth(poseReach);
+    replyLine("OK reach");
+  }
+  else if (cmd == "open") {
+    stopBaseMotion();
+    ArmPose p = currentPose;
+    p.claw = 140;
+    moveSmooth(p, 10);
+    replyLine("OK open");
+  }
+  else if (cmd == "close") {
+    stopBaseMotion();
+    ArmPose p = currentPose;
+    p.claw = 320;
+    moveSmooth(p, 10);
+    replyLine("OK close");
+  }
+  else if (cmd == "status") {
+    String s = "STATUS ";
+    s += String(currentPose.base) + " ";
+    s += String(currentPose.shoulder) + " ";
+    s += String(currentPose.elbow) + " ";
+    s += String(currentPose.wrist) + " ";
+    s += String(currentPose.claw);
+    replyLine(s);
+  }
+  else if (cmd == "stop") {
+    stopBaseMotion();
+    replyLine("OK stop");
+  }
+  else if (cmd.startsWith("movebase")) {
+    int target = 0;
+    char speedBuf[16] = "medium";
+    int parsed = sscanf(cmd.c_str(), "movebase %d %15s", &target, speedBuf);
+    if (parsed >= 1) {
+      String speed = (parsed == 2) ? String(speedBuf) : String("medium");
+      startBaseMotion(target, speed);
+      replyLine("OK movebase");
+    } else {
+      replyLine("ERR movebase");
+    }
+  }
+  else if (cmd == "basestatus") {
+    String s = "BASESTATUS ";
+    s += String(currentPose.base) + " ";
+    s += String(baseMotionTarget) + " ";
+    s += String(baseMotionActive ? 1 : 0);
+    replyLine(s);
+  }
+  else if (cmd.startsWith("setall")) {
+    int b, s, e, w, c;
+    if (sscanf(cmd.c_str(), "setall %d %d %d %d %d", &b, &s, &e, &w, &c) == 5) {
+      stopBaseMotion();
+      writeJoint(CH_BASE, b);
+      writeJoint(CH_SHOULDER, s);
+      writeJoint(CH_ELBOW, e);
+      writeJoint(CH_WRIST, w);
+      writeJoint(CH_CLAW, c);
+
+      currentPose.base = b;
+      currentPose.shoulder = s;
+      currentPose.elbow = e;
+      currentPose.wrist = w;
+      currentPose.claw = c;
+
+      replyLine("OK setall");
+    } else {
+      replyLine("ERR setall");
+    }
+  }
+  else if (cmd.startsWith("set")) {
+    int ch, val;
+    if (sscanf(cmd.c_str(), "set %d %d", &ch, &val) == 2) {
+      if (ch == CH_BASE) {
+        stopBaseMotion();
+      }
+      writeJoint(ch, val);
+
+      if (ch == 11) currentPose.base = val;
+      if (ch == 12) currentPose.shoulder = val;
+      if (ch == 13) currentPose.elbow = val;
+      if (ch == 14) currentPose.wrist = val;
+      if (ch == 15) currentPose.claw = val;
+
+      replyLine("OK set");
+    } else {
+      replyLine("ERR set");
+    }
+  }
+  else {
+    replyLine("ERR unknown");
+  }
+}
+
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  Serial.print("Connecting WiFi");
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (millis() - t0 > 30000) {
+      Serial.println("\nWiFi connect timeout, retrying...");
+      WiFi.disconnect(true, true);
+      delay(500);
+      WiFi.begin(WIFI_SSID, WIFI_PASS);
+      t0 = millis();
+    }
+  }
+
+  Serial.println();
+  Serial.print("WiFi connected, IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+// ---------- Setup ----------
+void setup() {
+  Serial.begin(115200);
+  ArmSerial.begin(ARM_UART_BAUD, SERIAL_8N1, ARM_UART_RX_PIN, ARM_UART_TX_PIN);
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  pwm.begin();
+  pwm.setPWMFreq(50);
+
+  delay(500);
+
+  // Poses (home adjusted to match Pi reset/default pose)
+  poseHome = {307, 440, 150, 160, 320};
+
+  poseReady = {
+    307,
+    440,
+    150,
+    180,
+    140
+  };
+
+  poseReach = {
+    307,
+    420,
+    200,
+    220,
+    140
+  };
+
+  currentPose = poseHome;
+  writePose(currentPose);
+
+  connectWiFi();
+  server.begin();
+  server.setNoDelay(true);
+
+  Serial.print("TCP server listening on port ");
+  Serial.println(TCP_PORT);
+  Serial.print("UART control ready on RX=");
+  Serial.print(ARM_UART_RX_PIN);
+  Serial.print(" TX=");
+  Serial.println(ARM_UART_TX_PIN);
+  Serial.println("READY");
+}
+
+// ---------- Loop ----------
+void loop() {
+  updateBaseMotion();
+
+  // Accept one client at a time
+  if (!client || !client.connected()) {
+    WiFiClient newClient = server.available();
+    if (newClient) {
+      if (client && client.connected()) {
+        client.stop();
+      }
+      client = newClient;
+      client.setNoDelay(true);
+      Serial.print("Client connected: ");
+      Serial.println(client.remoteIP());
+      client.println("READY");
+    }
+  }
+
+  // Network command input (serial command input intentionally disabled)
+  if (client && client.connected() && client.available()) {
+    String cmd = client.readStringUntil('\n');
+    handleCommand(cmd);
+  }
+
+  // UART command input from Raspberry Pi
+  if (ArmSerial.available()) {
+    String cmd = ArmSerial.readStringUntil('\n');
+    handleCommand(cmd);
+  }
+}
