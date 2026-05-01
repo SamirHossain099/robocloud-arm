@@ -8,7 +8,16 @@ from socketserver import ThreadingMixIn
 
 import cv2
 
-from pi.config import BASE_MAX, BASE_MIN, BASE_DEFAULT, SERIAL_BAUDRATE, SERIAL_PORT
+from pi.config import (
+    BASE_MAX,
+    BASE_MIN,
+    BASE_DEFAULT,
+    WRIST_DEFAULT,
+    WRIST_MIN,
+    WRIST_MAX,
+    SERIAL_BAUDRATE,
+    SERIAL_PORT,
+)
 from pi.controller.serial_io import SerialIO
 from pi.perception.camera import Camera
 
@@ -119,6 +128,8 @@ def _udp_control_loop(
     port: int,
     base_min: int,
     base_max: int,
+    wrist_min: int,
+    wrist_max: int,
     use_movebase: bool,
     movebase_speed: str,
 ):
@@ -127,7 +138,9 @@ def _udp_control_loop(
     sock.settimeout(1.0)
 
     base_value = BASE_DEFAULT
+    wrist_value = WRIST_DEFAULT
     serial_io.send_cmd(f"set 11 {base_value}")
+    serial_io.send_cmd(f"set 14 {wrist_value}")
     print(f"Control UDP listening on {host}:{port}")
 
     while True:
@@ -144,6 +157,7 @@ def _udp_control_loop(
             continue
 
         updated = False
+        wrist_updated = False
         stop_requested = False
         speed = movebase_speed
         if "base" in msg:
@@ -156,6 +170,12 @@ def _udp_control_loop(
             else:
                 base_value = _clamp(base_value + delta, base_min, base_max)
                 updated = True
+        if "wrist" in msg:
+            wrist_value = _clamp(int(msg["wrist"]), wrist_min, wrist_max)
+            wrist_updated = True
+        elif "wrist_delta" in msg:
+            wrist_value = _clamp(wrist_value + int(msg["wrist_delta"]), wrist_min, wrist_max)
+            wrist_updated = True
 
         if "stop" in msg and bool(msg["stop"]):
             stop_requested = True
@@ -171,6 +191,9 @@ def _udp_control_loop(
                 serial_io.send_cmd(f"movebase {base_value} {speed}")
             else:
                 serial_io.send_cmd(f"set 11 {base_value}")
+
+        if wrist_updated:
+            serial_io.send_cmd(f"set 14 {wrist_value}")
 
 
 def main() -> None:
@@ -207,6 +230,8 @@ def main() -> None:
         port=control_port,
         base_min=BASE_MIN,
         base_max=BASE_MAX,
+        wrist_min=WRIST_MIN,
+        wrist_max=WRIST_MAX,
         use_movebase=use_movebase,
         movebase_speed=movebase_speed,
     )
