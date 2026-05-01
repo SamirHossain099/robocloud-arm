@@ -15,6 +15,9 @@ from pi.config import (
     WRIST_DEFAULT,
     WRIST_MIN,
     WRIST_MAX,
+    CLAW_DEFAULT,
+    CLAW_MIN,
+    CLAW_MAX,
     SERIAL_BAUDRATE,
     SERIAL_PORT,
 )
@@ -130,9 +133,12 @@ def _udp_control_loop(
     base_max: int,
     wrist_min: int,
     wrist_max: int,
+    claw_min: int,
+    claw_max: int,
     use_movebase: bool,
     movebase_speed: str,
     use_movewrist: bool,
+    use_moveclaw: bool,
 ):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((host, port))
@@ -140,8 +146,10 @@ def _udp_control_loop(
 
     base_value = BASE_DEFAULT
     wrist_value = WRIST_DEFAULT
+    claw_value = CLAW_DEFAULT
     serial_io.send_cmd(f"set 11 {base_value}")
     serial_io.send_cmd(f"set 14 {wrist_value}")
+    serial_io.send_cmd(f"set 15 {claw_value}")
     print(f"Control UDP listening on {host}:{port}")
 
     while True:
@@ -159,6 +167,7 @@ def _udp_control_loop(
 
         updated = False
         wrist_updated = False
+        claw_updated = False
         stop_requested = False
         speed = movebase_speed
         if "base" in msg:
@@ -177,6 +186,12 @@ def _udp_control_loop(
         elif "wrist_delta" in msg:
             wrist_value = _clamp(wrist_value + int(msg["wrist_delta"]), wrist_min, wrist_max)
             wrist_updated = True
+        if "claw" in msg:
+            claw_value = _clamp(int(msg["claw"]), claw_min, claw_max)
+            claw_updated = True
+        elif "claw_delta" in msg:
+            claw_value = _clamp(claw_value + int(msg["claw_delta"]), claw_min, claw_max)
+            claw_updated = True
 
         if "stop" in msg and bool(msg["stop"]):
             stop_requested = True
@@ -184,7 +199,7 @@ def _udp_control_loop(
         if "speed" in msg:
             speed = str(msg["speed"]).strip() or movebase_speed
 
-        if stop_requested and (use_movebase or use_movewrist):
+        if stop_requested and (use_movebase or use_movewrist or use_moveclaw):
             serial_io.send_cmd("stop")
 
         if updated:
@@ -198,6 +213,12 @@ def _udp_control_loop(
                 serial_io.send_cmd(f"movewrist {wrist_value} {speed}")
             else:
                 serial_io.send_cmd(f"set 14 {wrist_value}")
+
+        if claw_updated:
+            if use_moveclaw:
+                serial_io.send_cmd(f"moveclaw {claw_value} {speed}")
+            else:
+                serial_io.send_cmd(f"set 15 {claw_value}")
 
 
 def main() -> None:
@@ -214,6 +235,7 @@ def main() -> None:
     use_movebase = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEBASE", "1").strip() not in {"0", "false", "False"}
     movebase_speed = os.getenv("ROBOCLOUD_MOVEBASE_SPEED", "fast")
     use_movewrist = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEWRIST", "1").strip() not in {"0", "false", "False"}
+    use_moveclaw = os.getenv("ROBOCLOUD_CONTROL_USE_MOVECLAW", "1").strip() not in {"0", "false", "False"}
 
     serial_io = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
     serial_io.connect()
@@ -237,9 +259,12 @@ def main() -> None:
         base_max=BASE_MAX,
         wrist_min=WRIST_MIN,
         wrist_max=WRIST_MAX,
+        claw_min=CLAW_MIN,
+        claw_max=CLAW_MAX,
         use_movebase=use_movebase,
         movebase_speed=movebase_speed,
         use_movewrist=use_movewrist,
+        use_moveclaw=use_moveclaw,
     )
 
 
