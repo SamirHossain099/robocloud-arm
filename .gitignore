@@ -3,3 +3,11 @@ __pycache__/
 .env
 venv/
 voice_env/
+
+# Laptop-side experimentation and local GUI work.
+laptop/
+
+# Local model weights/checkpoints.
+*.pt
+checkpoints/
+**/checkpoints/

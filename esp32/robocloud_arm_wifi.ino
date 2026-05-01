@@ -51,6 +51,13 @@ ArmPose poseHome;
 ArmPose poseReady;
 ArmPose poseReach;
 
+// Non-blocking base motion state (for immediate stop/override behavior).
+bool baseMotionActive = false;
+int baseMotionTarget = 0;
+int baseMotionStep = 4;
+int baseMotionIntervalMs = 10;
+unsigned long baseMotionLastMs = 0;
+
 // ---------- Helpers ----------
 int clamp(int val, int minv, int maxv) {
   if (val < minv) return minv;
@@ -69,6 +76,64 @@ void writePose(const ArmPose &p) {
   writeJoint(CH_ELBOW, p.elbow);
   writeJoint(CH_WRIST, p.wrist);
   writeJoint(CH_CLAW, p.claw);
+}
+
+void configureBaseMotionProfile(String speed) {
+  speed.trim();
+  speed.toLowerCase();
+  if (speed == "slow") {
+    baseMotionStep = 2;
+    baseMotionIntervalMs = 18;
+  } else if (speed == "fast") {
+    baseMotionStep = 8;
+    baseMotionIntervalMs = 6;
+  } else {
+    // "medium" default
+    baseMotionStep = 4;
+    baseMotionIntervalMs = 10;
+  }
+}
+
+void stopBaseMotion() {
+  baseMotionActive = false;
+  baseMotionTarget = currentPose.base;
+}
+
+void startBaseMotion(int target, String speed = "medium") {
+  target = clamp(target, PWM_MIN, PWM_MAX);
+  configureBaseMotionProfile(speed);
+  baseMotionTarget = target;
+  baseMotionLastMs = 0;
+  baseMotionActive = (baseMotionTarget != currentPose.base);
+}
+
+void updateBaseMotion() {
+  if (!baseMotionActive) return;
+
+  unsigned long now = millis();
+  if (baseMotionLastMs != 0 && (now - baseMotionLastMs) < (unsigned long)baseMotionIntervalMs) {
+    return;
+  }
+  baseMotionLastMs = now;
+
+  int cur = currentPose.base;
+  if (cur == baseMotionTarget) {
+    stopBaseMotion();
+    return;
+  }
+
+  int dir = (baseMotionTarget > cur) ? 1 : -1;
+  int next = cur + dir * baseMotionStep;
+  if ((dir > 0 && next > baseMotionTarget) || (dir < 0 && next < baseMotionTarget)) {
+    next = baseMotionTarget;
+  }
+
+  currentPose.base = next;
+  writeJoint(CH_BASE, currentPose.base);
+
+  if (currentPose.base == baseMotionTarget) {
+    stopBaseMotion();
+  }
 }
 
 // Ease-in-out in [0,1] — zero velocity at ends (smoother than linear 1-PWM stepping).
@@ -151,24 +216,29 @@ void handleCommand(String cmd) {
   if (cmd.length() == 0) return;
 
   if (cmd == "home") {
+    stopBaseMotion();
     moveSmooth(poseHome);
     replyLine("OK home");
   }
   else if (cmd == "ready") {
+    stopBaseMotion();
     moveSmooth(poseReady);
     replyLine("OK ready");
   }
   else if (cmd == "reach") {
+    stopBaseMotion();
     moveSmooth(poseReach);
     replyLine("OK reach");
   }
   else if (cmd == "open") {
+    stopBaseMotion();
     ArmPose p = currentPose;
     p.claw = 140;
     moveSmooth(p, 10);
     replyLine("OK open");
   }
   else if (cmd == "close") {
+    stopBaseMotion();
     ArmPose p = currentPose;
     p.claw = 320;
     moveSmooth(p, 10);
@@ -183,9 +253,33 @@ void handleCommand(String cmd) {
     s += String(currentPose.claw);
     replyLine(s);
   }
+  else if (cmd == "stop") {
+    stopBaseMotion();
+    replyLine("OK stop");
+  }
+  else if (cmd.startsWith("movebase")) {
+    int target = 0;
+    char speedBuf[16] = "medium";
+    int parsed = sscanf(cmd.c_str(), "movebase %d %15s", &target, speedBuf);
+    if (parsed >= 1) {
+      String speed = (parsed == 2) ? String(speedBuf) : String("medium");
+      startBaseMotion(target, speed);
+      replyLine("OK movebase");
+    } else {
+      replyLine("ERR movebase");
+    }
+  }
+  else if (cmd == "basestatus") {
+    String s = "BASESTATUS ";
+    s += String(currentPose.base) + " ";
+    s += String(baseMotionTarget) + " ";
+    s += String(baseMotionActive ? 1 : 0);
+    replyLine(s);
+  }
   else if (cmd.startsWith("setall")) {
     int b, s, e, w, c;
     if (sscanf(cmd.c_str(), "setall %d %d %d %d %d", &b, &s, &e, &w, &c) == 5) {
+      stopBaseMotion();
       writeJoint(CH_BASE, b);
       writeJoint(CH_SHOULDER, s);
       writeJoint(CH_ELBOW, e);
@@ -206,6 +300,9 @@ void handleCommand(String cmd) {
   else if (cmd.startsWith("set")) {
     int ch, val;
     if (sscanf(cmd.c_str(), "set %d %d", &ch, &val) == 2) {
+      if (ch == CH_BASE) {
+        stopBaseMotion();
+      }
       writeJoint(ch, val);
 
       if (ch == 11) currentPose.base = val;
@@ -295,6 +392,8 @@ void setup() {
 
 // ---------- Loop ----------
 void loop() {
+  updateBaseMotion();
+
   // Accept one client at a time
   if (!client || !client.connected()) {
     WiFiClient newClient = server.available();

@@ -2,3 +2,6 @@ ultralytics
 opencv-python
 numpy
 Pillow
+torch
+transformers
+openai

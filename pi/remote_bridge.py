@@ -119,6 +119,8 @@ def _udp_control_loop(
     port: int,
     base_min: int,
     base_max: int,
+    use_movebase: bool,
+    movebase_speed: str,
 ):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((host, port))
@@ -142,15 +144,33 @@ def _udp_control_loop(
             continue
 
         updated = False
+        stop_requested = False
+        speed = movebase_speed
         if "base" in msg:
             base_value = _clamp(int(msg["base"]), base_min, base_max)
             updated = True
         elif "delta" in msg:
-            base_value = _clamp(base_value + int(msg["delta"]), base_min, base_max)
-            updated = True
+            delta = int(msg["delta"])
+            if delta == 0:
+                stop_requested = True
+            else:
+                base_value = _clamp(base_value + delta, base_min, base_max)
+                updated = True
+
+        if "stop" in msg and bool(msg["stop"]):
+            stop_requested = True
+
+        if "speed" in msg:
+            speed = str(msg["speed"]).strip() or movebase_speed
+
+        if stop_requested and use_movebase:
+            serial_io.send_cmd("stop")
 
         if updated:
-            serial_io.send_cmd(f"set 11 {base_value}")
+            if use_movebase:
+                serial_io.send_cmd(f"movebase {base_value} {speed}")
+            else:
+                serial_io.send_cmd(f"set 11 {base_value}")
 
 
 def main() -> None:
@@ -164,6 +184,8 @@ def main() -> None:
 
     control_host = os.getenv("ROBOCLOUD_CONTROL_HOST", "0.0.0.0")
     control_port = int(os.getenv("ROBOCLOUD_CONTROL_PORT", "9999"))
+    use_movebase = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEBASE", "1").strip() not in {"0", "false", "False"}
+    movebase_speed = os.getenv("ROBOCLOUD_MOVEBASE_SPEED", "fast")
 
     serial_io = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
     serial_io.connect()
@@ -185,6 +207,8 @@ def main() -> None:
         port=control_port,
         base_min=BASE_MIN,
         base_max=BASE_MAX,
+        use_movebase=use_movebase,
+        movebase_speed=movebase_speed,
     )
 
 
