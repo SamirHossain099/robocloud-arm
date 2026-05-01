@@ -146,6 +146,20 @@ void configureWristMotionProfile(String speed) {
 
 void configureJointMotionProfile(JointMotion &jm, String speed) {
   configureMotionProfile(speed, jm.step, jm.intervalMs);
+  // Shoulder/elbow carry more load; use gentler stepping to avoid jerk.
+  if (jm.channel == CH_SHOULDER || jm.channel == CH_ELBOW) {
+    if (speed == "fast") {
+      jm.step = 4;
+      jm.intervalMs = 8;
+    } else if (speed == "medium") {
+      jm.step = 3;
+      jm.intervalMs = 12;
+    } else {
+      // slow
+      jm.step = 2;
+      jm.intervalMs = 16;
+    }
+  }
 }
 
 void stopJointMotion(JointMotion &jm) {
