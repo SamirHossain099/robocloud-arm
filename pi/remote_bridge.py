@@ -132,6 +132,7 @@ def _udp_control_loop(
     wrist_max: int,
     use_movebase: bool,
     movebase_speed: str,
+    use_movewrist: bool,
 ):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((host, port))
@@ -183,7 +184,7 @@ def _udp_control_loop(
         if "speed" in msg:
             speed = str(msg["speed"]).strip() or movebase_speed
 
-        if stop_requested and use_movebase:
+        if stop_requested and (use_movebase or use_movewrist):
             serial_io.send_cmd("stop")
 
         if updated:
@@ -193,7 +194,10 @@ def _udp_control_loop(
                 serial_io.send_cmd(f"set 11 {base_value}")
 
         if wrist_updated:
-            serial_io.send_cmd(f"set 14 {wrist_value}")
+            if use_movewrist:
+                serial_io.send_cmd(f"movewrist {wrist_value} {speed}")
+            else:
+                serial_io.send_cmd(f"set 14 {wrist_value}")
 
 
 def main() -> None:
@@ -209,6 +213,7 @@ def main() -> None:
     control_port = int(os.getenv("ROBOCLOUD_CONTROL_PORT", "9999"))
     use_movebase = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEBASE", "1").strip() not in {"0", "false", "False"}
     movebase_speed = os.getenv("ROBOCLOUD_MOVEBASE_SPEED", "fast")
+    use_movewrist = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEWRIST", "1").strip() not in {"0", "false", "False"}
 
     serial_io = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
     serial_io.connect()
@@ -234,6 +239,7 @@ def main() -> None:
         wrist_max=WRIST_MAX,
         use_movebase=use_movebase,
         movebase_speed=movebase_speed,
+        use_movewrist=use_movewrist,
     )
 
 

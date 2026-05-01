@@ -51,12 +51,21 @@ ArmPose poseHome;
 ArmPose poseReady;
 ArmPose poseReach;
 
-// Non-blocking base motion state (for immediate stop/override behavior).
-bool baseMotionActive = false;
-int baseMotionTarget = 0;
-int baseMotionStep = 4;
-int baseMotionIntervalMs = 10;
-unsigned long baseMotionLastMs = 0;
+struct JointMotion {
+  bool active;
+  int target;
+  int step;
+  int intervalMs;
+  unsigned long lastMs;
+  int channel;
+};
+
+// Non-blocking per-joint motion state (immediate stop/override behavior).
+JointMotion baseMotion = {false, 0, 4, 10, 0, CH_BASE};
+JointMotion shoulderMotion = {false, 0, 4, 10, 0, CH_SHOULDER};
+JointMotion elbowMotion = {false, 0, 4, 10, 0, CH_ELBOW};
+JointMotion wristMotion = {false, 0, 4, 10, 0, CH_WRIST};
+JointMotion clawMotion = {false, 0, 4, 10, 0, CH_CLAW};
 
 // ---------- Helpers ----------
 int clamp(int val, int minv, int maxv) {
@@ -78,62 +87,140 @@ void writePose(const ArmPose &p) {
   writeJoint(CH_CLAW, p.claw);
 }
 
-void configureBaseMotionProfile(String speed) {
+int* posePtrByChannel(int ch) {
+  if (ch == CH_BASE) return &currentPose.base;
+  if (ch == CH_SHOULDER) return &currentPose.shoulder;
+  if (ch == CH_ELBOW) return &currentPose.elbow;
+  if (ch == CH_WRIST) return &currentPose.wrist;
+  if (ch == CH_CLAW) return &currentPose.claw;
+  return nullptr;
+}
+
+JointMotion* motionByChannel(int ch) {
+  if (ch == CH_BASE) return &baseMotion;
+  if (ch == CH_SHOULDER) return &shoulderMotion;
+  if (ch == CH_ELBOW) return &elbowMotion;
+  if (ch == CH_WRIST) return &wristMotion;
+  if (ch == CH_CLAW) return &clawMotion;
+  return nullptr;
+}
+
+void configureMotionProfile(String speed, int &step, int &intervalMs) {
   speed.trim();
   speed.toLowerCase();
   if (speed == "slow") {
-    baseMotionStep = 2;
-    baseMotionIntervalMs = 18;
+    step = 2;
+    intervalMs = 18;
   } else if (speed == "fast") {
-    baseMotionStep = 8;
-    baseMotionIntervalMs = 6;
+    step = 8;
+    intervalMs = 6;
   } else {
     // "medium" default
-    baseMotionStep = 4;
-    baseMotionIntervalMs = 10;
+    step = 4;
+    intervalMs = 10;
   }
+}
+
+void configureBaseMotionProfile(String speed) {
+  configureMotionProfile(speed, baseMotion.step, baseMotion.intervalMs);
+}
+
+void configureWristMotionProfile(String speed) {
+  configureMotionProfile(speed, wristMotion.step, wristMotion.intervalMs);
+}
+
+void configureJointMotionProfile(JointMotion &jm, String speed) {
+  configureMotionProfile(speed, jm.step, jm.intervalMs);
+}
+
+void stopJointMotion(JointMotion &jm) {
+  jm.active = false;
+  int* p = posePtrByChannel(jm.channel);
+  if (p) jm.target = *p;
+}
+
+void startJointMotion(JointMotion &jm, int target, String speed = "medium") {
+  int* p = posePtrByChannel(jm.channel);
+  if (!p) return;
+  target = clamp(target, PWM_MIN, PWM_MAX);
+  configureJointMotionProfile(jm, speed);
+  jm.target = target;
+  jm.lastMs = 0;
+  jm.active = (jm.target != *p);
+}
+
+void updateJointMotion(JointMotion &jm) {
+  if (!jm.active) return;
+  int* p = posePtrByChannel(jm.channel);
+  if (!p) {
+    jm.active = false;
+    return;
+  }
+
+  unsigned long now = millis();
+  if (jm.lastMs != 0 && (now - jm.lastMs) < (unsigned long)jm.intervalMs) {
+    return;
+  }
+  jm.lastMs = now;
+
+  int cur = *p;
+  if (cur == jm.target) {
+    stopJointMotion(jm);
+    return;
+  }
+
+  int dir = (jm.target > cur) ? 1 : -1;
+  int next = cur + dir * jm.step;
+  if ((dir > 0 && next > jm.target) || (dir < 0 && next < jm.target)) {
+    next = jm.target;
+  }
+
+  *p = next;
+  writeJoint(jm.channel, *p);
+
+  if (*p == jm.target) {
+    stopJointMotion(jm);
+  }
+}
+
+void stopAllJointMotions() {
+  stopJointMotion(baseMotion);
+  stopJointMotion(shoulderMotion);
+  stopJointMotion(elbowMotion);
+  stopJointMotion(wristMotion);
+  stopJointMotion(clawMotion);
+}
+
+void updateAllJointMotions() {
+  updateJointMotion(baseMotion);
+  updateJointMotion(shoulderMotion);
+  updateJointMotion(elbowMotion);
+  updateJointMotion(wristMotion);
+  updateJointMotion(clawMotion);
 }
 
 void stopBaseMotion() {
-  baseMotionActive = false;
-  baseMotionTarget = currentPose.base;
+  stopJointMotion(baseMotion);
+}
+
+void stopWristMotion() {
+  stopJointMotion(wristMotion);
 }
 
 void startBaseMotion(int target, String speed = "medium") {
-  target = clamp(target, PWM_MIN, PWM_MAX);
-  configureBaseMotionProfile(speed);
-  baseMotionTarget = target;
-  baseMotionLastMs = 0;
-  baseMotionActive = (baseMotionTarget != currentPose.base);
+  startJointMotion(baseMotion, target, speed);
+}
+
+void startWristMotion(int target, String speed = "medium") {
+  startJointMotion(wristMotion, target, speed);
 }
 
 void updateBaseMotion() {
-  if (!baseMotionActive) return;
+  updateJointMotion(baseMotion);
+}
 
-  unsigned long now = millis();
-  if (baseMotionLastMs != 0 && (now - baseMotionLastMs) < (unsigned long)baseMotionIntervalMs) {
-    return;
-  }
-  baseMotionLastMs = now;
-
-  int cur = currentPose.base;
-  if (cur == baseMotionTarget) {
-    stopBaseMotion();
-    return;
-  }
-
-  int dir = (baseMotionTarget > cur) ? 1 : -1;
-  int next = cur + dir * baseMotionStep;
-  if ((dir > 0 && next > baseMotionTarget) || (dir < 0 && next < baseMotionTarget)) {
-    next = baseMotionTarget;
-  }
-
-  currentPose.base = next;
-  writeJoint(CH_BASE, currentPose.base);
-
-  if (currentPose.base == baseMotionTarget) {
-    stopBaseMotion();
-  }
+void updateWristMotion() {
+  updateJointMotion(wristMotion);
 }
 
 // Ease-in-out in [0,1] — zero velocity at ends (smoother than linear 1-PWM stepping).
@@ -216,29 +303,29 @@ void handleCommand(String cmd) {
   if (cmd.length() == 0) return;
 
   if (cmd == "home") {
-    stopBaseMotion();
+    stopAllJointMotions();
     moveSmooth(poseHome);
     replyLine("OK home");
   }
   else if (cmd == "ready") {
-    stopBaseMotion();
+    stopAllJointMotions();
     moveSmooth(poseReady);
     replyLine("OK ready");
   }
   else if (cmd == "reach") {
-    stopBaseMotion();
+    stopAllJointMotions();
     moveSmooth(poseReach);
     replyLine("OK reach");
   }
   else if (cmd == "open") {
-    stopBaseMotion();
+    stopAllJointMotions();
     ArmPose p = currentPose;
     p.claw = 140;
     moveSmooth(p, 10);
     replyLine("OK open");
   }
   else if (cmd == "close") {
-    stopBaseMotion();
+    stopAllJointMotions();
     ArmPose p = currentPose;
     p.claw = 320;
     moveSmooth(p, 10);
@@ -254,7 +341,7 @@ void handleCommand(String cmd) {
     replyLine(s);
   }
   else if (cmd == "stop") {
-    stopBaseMotion();
+    stopAllJointMotions();
     replyLine("OK stop");
   }
   else if (cmd.startsWith("movebase")) {
@@ -272,14 +359,92 @@ void handleCommand(String cmd) {
   else if (cmd == "basestatus") {
     String s = "BASESTATUS ";
     s += String(currentPose.base) + " ";
-    s += String(baseMotionTarget) + " ";
-    s += String(baseMotionActive ? 1 : 0);
+    s += String(baseMotion.target) + " ";
+    s += String(baseMotion.active ? 1 : 0);
+    replyLine(s);
+  }
+  else if (cmd.startsWith("movewrist")) {
+    int target = 0;
+    char speedBuf[16] = "medium";
+    int parsed = sscanf(cmd.c_str(), "movewrist %d %15s", &target, speedBuf);
+    if (parsed >= 1) {
+      String speed = (parsed == 2) ? String(speedBuf) : String("medium");
+      startWristMotion(target, speed);
+      replyLine("OK movewrist");
+    } else {
+      replyLine("ERR movewrist");
+    }
+  }
+  else if (cmd == "wriststatus") {
+    String s = "WRISTSTATUS ";
+    s += String(currentPose.wrist) + " ";
+    s += String(wristMotion.target) + " ";
+    s += String(wristMotion.active ? 1 : 0);
+    replyLine(s);
+  }
+  else if (cmd.startsWith("movejoint")) {
+    int ch = 0;
+    int target = 0;
+    char speedBuf[16] = "medium";
+    int parsed = sscanf(cmd.c_str(), "movejoint %d %d %15s", &ch, &target, speedBuf);
+    JointMotion* jm = motionByChannel(ch);
+    if (parsed >= 2 && jm != nullptr) {
+      String speed = (parsed == 3) ? String(speedBuf) : String("medium");
+      startJointMotion(*jm, target, speed);
+      replyLine("OK movejoint");
+    } else {
+      replyLine("ERR movejoint");
+    }
+  }
+  else if (cmd.startsWith("moveshoulder")) {
+    int target = 0;
+    char speedBuf[16] = "medium";
+    int parsed = sscanf(cmd.c_str(), "moveshoulder %d %15s", &target, speedBuf);
+    if (parsed >= 1) {
+      String speed = (parsed == 2) ? String(speedBuf) : String("medium");
+      startJointMotion(shoulderMotion, target, speed);
+      replyLine("OK moveshoulder");
+    } else {
+      replyLine("ERR moveshoulder");
+    }
+  }
+  else if (cmd.startsWith("moveelbow")) {
+    int target = 0;
+    char speedBuf[16] = "medium";
+    int parsed = sscanf(cmd.c_str(), "moveelbow %d %15s", &target, speedBuf);
+    if (parsed >= 1) {
+      String speed = (parsed == 2) ? String(speedBuf) : String("medium");
+      startJointMotion(elbowMotion, target, speed);
+      replyLine("OK moveelbow");
+    } else {
+      replyLine("ERR moveelbow");
+    }
+  }
+  else if (cmd.startsWith("moveclaw")) {
+    int target = 0;
+    char speedBuf[16] = "medium";
+    int parsed = sscanf(cmd.c_str(), "moveclaw %d %15s", &target, speedBuf);
+    if (parsed >= 1) {
+      String speed = (parsed == 2) ? String(speedBuf) : String("medium");
+      startJointMotion(clawMotion, target, speed);
+      replyLine("OK moveclaw");
+    } else {
+      replyLine("ERR moveclaw");
+    }
+  }
+  else if (cmd == "jointstatus") {
+    String s = "JOINTSTATUS ";
+    s += String(currentPose.base) + " " + String(baseMotion.target) + " " + String(baseMotion.active ? 1 : 0) + " ";
+    s += String(currentPose.shoulder) + " " + String(shoulderMotion.target) + " " + String(shoulderMotion.active ? 1 : 0) + " ";
+    s += String(currentPose.elbow) + " " + String(elbowMotion.target) + " " + String(elbowMotion.active ? 1 : 0) + " ";
+    s += String(currentPose.wrist) + " " + String(wristMotion.target) + " " + String(wristMotion.active ? 1 : 0) + " ";
+    s += String(currentPose.claw) + " " + String(clawMotion.target) + " " + String(clawMotion.active ? 1 : 0);
     replyLine(s);
   }
   else if (cmd.startsWith("setall")) {
     int b, s, e, w, c;
     if (sscanf(cmd.c_str(), "setall %d %d %d %d %d", &b, &s, &e, &w, &c) == 5) {
-      stopBaseMotion();
+      stopAllJointMotions();
       writeJoint(CH_BASE, b);
       writeJoint(CH_SHOULDER, s);
       writeJoint(CH_ELBOW, e);
@@ -300,8 +465,9 @@ void handleCommand(String cmd) {
   else if (cmd.startsWith("set")) {
     int ch, val;
     if (sscanf(cmd.c_str(), "set %d %d", &ch, &val) == 2) {
-      if (ch == CH_BASE) {
-        stopBaseMotion();
+      JointMotion* jm = motionByChannel(ch);
+      if (jm != nullptr) {
+        stopJointMotion(*jm);
       }
       writeJoint(ch, val);
 
@@ -392,7 +558,7 @@ void setup() {
 
 // ---------- Loop ----------
 void loop() {
-  updateBaseMotion();
+  updateAllJointMotions();
 
   // Accept one client at a time
   if (!client || !client.connected()) {
