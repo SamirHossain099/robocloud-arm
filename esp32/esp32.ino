@@ -31,8 +31,8 @@ struct WiFiCredential {
 };
 
 const WiFiCredential WIFI_CREDENTIALS[] = {
-  {"Park East", "SilverGoldJackal"},
   {"TTUguest", "fearthestache"},
+  {"Park East", "SilverGoldJackal"},
 };
 const int WIFI_CREDENTIALS_COUNT = sizeof(WIFI_CREDENTIALS) / sizeof(WIFI_CREDENTIALS[0]);
 const uint16_t TCP_PORT = 9000;

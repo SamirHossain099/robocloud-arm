@@ -4,4 +4,4 @@ numpy
 Pillow
 torch
 transformers
-openai
+openai>=1.70.0
