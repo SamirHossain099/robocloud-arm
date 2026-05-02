@@ -27,25 +27,53 @@ def _parse_camera_source() -> Source:
     return int(os.getenv("ROBOCLOUD_CAMERA_INDEX", "0"))
 
 
+def parse_secondary_camera_source() -> Optional[Source]:
+    """Optional second UVC device (e.g. third-person claw view). ROBOCLOUD_CAMERA2 or ROBOCLOUD_CAMERA2_INDEX."""
+    raw = os.getenv("ROBOCLOUD_CAMERA2", "").strip()
+    if raw:
+        if raw.startswith("/dev/"):
+            return raw
+        if raw.isdigit() or (raw.startswith("-") and raw[1:].isdigit()):
+            return int(raw)
+        return raw
+    idx = os.getenv("ROBOCLOUD_CAMERA2_INDEX", "").strip()
+    if idx.isdigit() or (idx.startswith("-") and idx[1:].isdigit()):
+        return int(idx)
+    return None
+
+
 def _fourcc_from_string(code: str) -> int:
     code = code.strip().upper().ljust(4)[:4]
     return cv2.VideoWriter_fourcc(*code)
 
 
-def _configure_capture(cap) -> tuple[int, int, float]:
+def _configure_capture(cap, *, role: str = "primary") -> tuple[int, int, float]:
     """Set width/height/FPS and FOURCC.
 
-    Defaults favor stable UVC capture on USB2 (YUYV 640x480) over high-res MJPEG,
-    which often spams corrupt-frame warnings on Pi + C270-class webcams.
+    role='primary' uses ROBOCLOUD_CAMERA_*; role='secondary' uses ROBOCLOUD_CAMERA2_* with
+    fallback to primary env vars for any unset key.
     """
-    w = int(os.getenv("ROBOCLOUD_CAMERA_WIDTH", "640"))
-    h = int(os.getenv("ROBOCLOUD_CAMERA_HEIGHT", "480"))
-    fps = float(os.getenv("ROBOCLOUD_CAMERA_FPS", "30"))
+    if role == "secondary":
+        w = int(os.getenv("ROBOCLOUD_CAMERA2_WIDTH", os.getenv("ROBOCLOUD_CAMERA_WIDTH", "640")))
+        h = int(os.getenv("ROBOCLOUD_CAMERA2_HEIGHT", os.getenv("ROBOCLOUD_CAMERA_HEIGHT", "480")))
+        fps = float(os.getenv("ROBOCLOUD_CAMERA2_FPS", os.getenv("ROBOCLOUD_CAMERA_FPS", "30")))
+        fourcc_raw = os.getenv("ROBOCLOUD_CAMERA2_FOURCC", "").strip()
+        if not fourcc_raw:
+            fourcc_raw = os.getenv("ROBOCLOUD_CAMERA_FOURCC", "").strip()
+        if not fourcc_raw and platform.system() == "Linux":
+            fourcc_raw = "YUYV"
+        buf = os.getenv(
+            "ROBOCLOUD_CAMERA2_BUFFERSIZE", os.getenv("ROBOCLOUD_CAMERA_BUFFERSIZE", "1")
+        ).strip()
+    else:
+        w = int(os.getenv("ROBOCLOUD_CAMERA_WIDTH", "640"))
+        h = int(os.getenv("ROBOCLOUD_CAMERA_HEIGHT", "480"))
+        fps = float(os.getenv("ROBOCLOUD_CAMERA_FPS", "30"))
+        fourcc_raw = os.getenv("ROBOCLOUD_CAMERA_FOURCC", "").strip()
+        if not fourcc_raw and platform.system() == "Linux":
+            fourcc_raw = "YUYV"
+        buf = os.getenv("ROBOCLOUD_CAMERA_BUFFERSIZE", "1").strip()
 
-    fourcc_raw = os.getenv("ROBOCLOUD_CAMERA_FOURCC", "").strip()
-    if not fourcc_raw and platform.system() == "Linux":
-        fourcc_raw = "YUYV"
-    # UVC: set pixel format before resolution for reliable MJPG negotiation.
     if fourcc_raw and fourcc_raw.lower() not in {"none", "default", "0"}:
         cap.set(cv2.CAP_PROP_FOURCC, _fourcc_from_string(fourcc_raw))
 
@@ -53,8 +81,6 @@ def _configure_capture(cap) -> tuple[int, int, float]:
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
     cap.set(cv2.CAP_PROP_FPS, fps)
 
-    # Single-frame buffer reduces stale / stitched MJPEG frames (common "Corrupt JPEG" source).
-    buf = os.getenv("ROBOCLOUD_CAMERA_BUFFERSIZE", "1").strip()
     if buf and platform.system() == "Linux":
         try:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, int(buf))
@@ -86,7 +112,15 @@ def _open_capture(source: Source):
 
 
 class Camera:
-    def __init__(self, source: Optional[Source] = None, *, index: Optional[int] = None):
+    def __init__(
+        self,
+        source: Optional[Source] = None,
+        *,
+        index: Optional[int] = None,
+        role: str = "primary",
+    ):
+        if role not in {"primary", "secondary"}:
+            raise ValueError("role must be 'primary' or 'secondary'")
         if index is not None and source is not None:
             raise ValueError("Pass at most one of source or index")
         if index is not None:
@@ -95,12 +129,15 @@ class Camera:
             self.source = source
         else:
             self.source = _parse_camera_source()
+        self.role = role
         self.cap = _open_capture(self.source)
         self.actual_width = 0
         self.actual_height = 0
         self.actual_fps = 0.0
         if self.cap.isOpened():
-            self.actual_width, self.actual_height, self.actual_fps = _configure_capture(self.cap)
+            self.actual_width, self.actual_height, self.actual_fps = _configure_capture(
+                self.cap, role=role
+            )
             try:
                 warmup = int(os.getenv("ROBOCLOUD_CAMERA_WARMUP_FRAMES", "8"))
             except ValueError:

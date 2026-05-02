@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+from typing import Optional
 import threading
 import time
 from http import server
@@ -28,7 +29,7 @@ from pi.config import (
     SERIAL_PORT,
 )
 from pi.controller.serial_io import SerialIO
-from pi.perception.camera import Camera
+from pi.perception.camera import Camera, parse_secondary_camera_source
 
 
 def _clamp(value: int, minimum: int, maximum: int) -> int:
@@ -37,11 +38,28 @@ def _clamp(value: int, minimum: int, maximum: int) -> int:
 
 class _RawStreamHandler(server.BaseHTTPRequestHandler):
     camera = None
+    camera2 = None
     jpeg_quality = 70
     frame_interval = 0.04
 
     def log_message(self, format, *args):
         return
+
+    def _send_jpeg_frame(self, frame) -> bool:
+        ok, jpg = cv2.imencode(
+            ".jpg",
+            frame,
+            [int(cv2.IMWRITE_JPEG_QUALITY), int(self.jpeg_quality)],
+        )
+        if not ok:
+            return False
+        payload = jpg.tobytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+        return True
 
     def do_GET(self):
         if self.path == "/":
@@ -63,28 +81,47 @@ class _RawStreamHandler(server.BaseHTTPRequestHandler):
                 self.send_error(503, "No frame available")
                 self.end_headers()
                 return
-            ok, jpg = cv2.imencode(
-                ".jpg",
-                frame,
-                [int(cv2.IMWRITE_JPEG_QUALITY), int(self.jpeg_quality)],
-            )
-            if not ok:
+            if not self._send_jpeg_frame(frame):
                 self.send_error(500, "Encode failed")
                 self.end_headers()
+            return
+
+        if self.path == "/snapshot2.jpg":
+            if not self.camera2:
+                self.send_error(404, "Second camera not configured")
+                self.end_headers()
                 return
-            payload = jpg.tobytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "image/jpeg")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
+            frame = self.camera2.get_frame()
+            if frame is None:
+                self.send_error(503, "No frame available (camera 2)")
+                self.end_headers()
+                return
+            if not self._send_jpeg_frame(frame):
+                self.send_error(500, "Encode failed")
+                self.end_headers()
             return
 
-        if self.path != "/stream":
-            self.send_error(404)
-            self.end_headers()
+        if self.path == "/stream":
+            self._mjpeg_stream(self.camera)
             return
 
+        if self.path == "/stream2":
+            if not self.camera2:
+                self.send_error(404, "Second camera not configured")
+                self.end_headers()
+                return
+            self._mjpeg_stream(self.camera2)
+            return
+
+        self.send_error(404)
+        self.end_headers()
+        return
+
+    def _mjpeg_stream(self, cam) -> None:
+        if not cam:
+            self.send_error(503, "Camera not available")
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header("Age", 0)
         self.send_header("Cache-Control", "no-cache, private")
@@ -94,7 +131,7 @@ class _RawStreamHandler(server.BaseHTTPRequestHandler):
 
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(self.jpeg_quality)]
         while True:
-            frame = self.camera.get_frame() if self.camera else None
+            frame = cam.get_frame()
             if frame is None:
                 time.sleep(0.01)
                 continue
@@ -123,8 +160,16 @@ class _ThreadedHTTPServer(ThreadingMixIn, server.HTTPServer):
     allow_reuse_address = True
 
 
-def _run_stream_server(camera: Camera, host: str, port: int, jpeg_quality: int, frame_interval: float):
+def _run_stream_server(
+    camera: Camera,
+    camera2: Optional[Camera],
+    host: str,
+    port: int,
+    jpeg_quality: int,
+    frame_interval: float,
+):
     _RawStreamHandler.camera = camera
+    _RawStreamHandler.camera2 = camera2
     _RawStreamHandler.jpeg_quality = jpeg_quality
     _RawStreamHandler.frame_interval = frame_interval
     httpd = _ThreadedHTTPServer((host, port), _RawStreamHandler)
@@ -301,14 +346,30 @@ def main() -> None:
 
     camera.start()
 
+    camera2 = None
+    src2 = parse_secondary_camera_source()
+    if src2 is not None:
+        camera2 = Camera(source=src2, role="secondary")
+        if not camera2.cap.isOpened():
+            print(f"WARN: Second camera did not open ({camera2.source!r}); /stream2 disabled.")
+            camera2 = None
+        else:
+            print(
+                f"Camera2 opened: {camera2.source!r} "
+                f"({camera2.actual_width}x{camera2.actual_height} @ {camera2.actual_fps:.1f} fps)"
+            )
+            camera2.start()
+
     stream_thread = threading.Thread(
         target=_run_stream_server,
-        args=(camera, stream_host, stream_port, stream_jpeg_quality, stream_frame_interval),
+        args=(camera, camera2, stream_host, stream_port, stream_jpeg_quality, stream_frame_interval),
         daemon=True,
     )
     stream_thread.start()
 
     print(f"Stream ready: http://{stream_host}:{stream_port}/stream")
+    if camera2:
+        print(f"Stream2 (overhead): http://{stream_host}:{stream_port}/stream2")
     _udp_control_loop(
         serial_io=serial_io,
         host=control_host,
