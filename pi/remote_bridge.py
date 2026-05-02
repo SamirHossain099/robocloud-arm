@@ -1,7 +1,7 @@
 import json
 import os
 import socket
-from typing import Optional
+from typing import Optional, Union
 import threading
 import time
 from http import server
@@ -26,9 +26,14 @@ from pi.config import (
     CLAW_DEFAULT,
     CLAW_MIN,
     CLAW_MAX,
+    CONTROL_TRANSPORT,
+    NETWORK_HOST,
+    NETWORK_PORT,
+    NETWORK_TIMEOUT,
     SERIAL_BAUDRATE,
     SERIAL_PORT,
 )
+from pi.controller.network_io import NetworkIO
 from pi.controller.serial_io import SerialIO
 from pi.perception.camera import Camera, parse_secondary_camera_source
 
@@ -178,7 +183,7 @@ def _run_stream_server(
 
 
 def _udp_control_loop(
-    serial_io: SerialIO,
+    arm_io: Union[SerialIO, NetworkIO],
     host: str,
     port: int,
     base_min: int,
@@ -207,11 +212,11 @@ def _udp_control_loop(
     elbow_value = ELBOW_DEFAULT
     wrist_value = WRIST_DEFAULT
     claw_value = CLAW_DEFAULT
-    serial_io.send_cmd(f"set 11 {base_value}")
-    serial_io.send_cmd(f"set 12 {shoulder_value}")
-    serial_io.send_cmd(f"set 13 {elbow_value}")
-    serial_io.send_cmd(f"set 14 {wrist_value}")
-    serial_io.send_cmd(f"set 15 {claw_value}")
+    arm_io.send_cmd(f"set 11 {base_value}")
+    arm_io.send_cmd(f"set 12 {shoulder_value}")
+    arm_io.send_cmd(f"set 13 {elbow_value}")
+    arm_io.send_cmd(f"set 14 {wrist_value}")
+    arm_io.send_cmd(f"set 15 {claw_value}")
     print(f"Control UDP listening on {host}:{port}")
 
     while True:
@@ -276,37 +281,37 @@ def _udp_control_loop(
             speed = str(msg["speed"]).strip() or movebase_speed
 
         if stop_requested and (use_movebase or use_moveshoulder or use_moveelbow or use_movewrist or use_moveclaw):
-            serial_io.send_cmd("stop")
+            arm_io.send_cmd("stop")
 
         if updated:
             if use_movebase:
-                serial_io.send_cmd(f"movebase {base_value} {speed}")
+                arm_io.send_cmd(f"movebase {base_value} {speed}")
             else:
-                serial_io.send_cmd(f"set 11 {base_value}")
+                arm_io.send_cmd(f"set 11 {base_value}")
 
         if wrist_updated:
             if use_movewrist:
-                serial_io.send_cmd(f"movewrist {wrist_value} {speed}")
+                arm_io.send_cmd(f"movewrist {wrist_value} {speed}")
             else:
-                serial_io.send_cmd(f"set 14 {wrist_value}")
+                arm_io.send_cmd(f"set 14 {wrist_value}")
 
         if shoulder_updated:
             if use_moveshoulder:
-                serial_io.send_cmd(f"moveshoulder {shoulder_value} {speed}")
+                arm_io.send_cmd(f"moveshoulder {shoulder_value} {speed}")
             else:
-                serial_io.send_cmd(f"set 12 {shoulder_value}")
+                arm_io.send_cmd(f"set 12 {shoulder_value}")
 
         if elbow_updated:
             if use_moveelbow:
-                serial_io.send_cmd(f"moveelbow {elbow_value} {speed}")
+                arm_io.send_cmd(f"moveelbow {elbow_value} {speed}")
             else:
-                serial_io.send_cmd(f"set 13 {elbow_value}")
+                arm_io.send_cmd(f"set 13 {elbow_value}")
 
         if claw_updated:
             if use_moveclaw:
-                serial_io.send_cmd(f"moveclaw {claw_value} {speed}")
+                arm_io.send_cmd(f"moveclaw {claw_value} {speed}")
             else:
-                serial_io.send_cmd(f"set 15 {claw_value}")
+                arm_io.send_cmd(f"set 15 {claw_value}")
 
 
 def main() -> None:
@@ -327,22 +332,50 @@ def main() -> None:
     use_movewrist = os.getenv("ROBOCLOUD_CONTROL_USE_MOVEWRIST", "1").strip() not in {"0", "false", "False"}
     use_moveclaw = os.getenv("ROBOCLOUD_CONTROL_USE_MOVECLAW", "1").strip() not in {"0", "false", "False"}
 
-    serial_io = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
-    try:
-        serial_io.connect()
-    except (OSError, serial.SerialException) as exc:
-        print(
-            f"ERROR: Cannot open arm serial {serial_port!r} @ {serial_baudrate}: {exc}\n"
-            "  Video/stream can still work; arm control needs Pi UART wired to the ESP RX/TX.\n"
-            "  Try: ls /dev/serial* /dev/ttyAMA* /dev/ttyUSB*  then e.g.\n"
-            "    ROBOCLOUD_SERIAL_PORT=/dev/ttyAMA0 python -m pi.remote_bridge\n"
-            "  Add user to group 'dialout' if permission denied. ESP WiFi is NOT used for laptop→arm control."
+    control_transport = os.getenv("ROBOCLOUD_CONTROL_TRANSPORT", CONTROL_TRANSPORT).lower()
+    if control_transport == "network":
+        network_host = os.getenv("ROBOCLOUD_NETWORK_HOST", NETWORK_HOST)
+        network_port = int(os.getenv("ROBOCLOUD_NETWORK_PORT", str(NETWORK_PORT)))
+        network_timeout = float(
+            os.getenv("ROBOCLOUD_NETWORK_TIMEOUT", str(NETWORK_TIMEOUT))
         )
-        raise
-    print(
-        f"Arm serial OK: {serial_port!r} @ {serial_baudrate} baud → ESP UART "
-        f"(UDP commands on {control_host}:{control_port}; ESP WiFi optional for this path)."
-    )
+        arm_io = NetworkIO(
+            host=network_host, port=network_port, timeout=network_timeout
+        )
+        try:
+            arm_io.connect()
+        except OSError as exc:
+            print(
+                f"ERROR: Cannot open TCP to ESP {network_host!r}:{network_port}: {exc}\n"
+                "  ESP must be on Wi‑Fi with TCP server on that port (see serial monitor: IP + listening).\n"
+                "  Set ROBOCLOUD_NETWORK_HOST to that IP, e.g.\n"
+                "    ROBOCLOUD_CONTROL_TRANSPORT=network ROBOCLOUD_NETWORK_HOST=10.171.225.189 "
+                "python -m pi.remote_bridge"
+            )
+            raise
+        print(
+            f"Arm TCP OK: Pi → {network_host}:{network_port} (ESP command port); "
+            f"laptop UDP → Pi {control_host}:{control_port} (no UART)."
+        )
+    else:
+        arm_io = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
+        try:
+            arm_io.connect()
+        except (OSError, serial.SerialException) as exc:
+            print(
+                f"ERROR: Cannot open arm serial {serial_port!r} @ {serial_baudrate}: {exc}\n"
+                "  Video/stream can still work; arm control needs Pi UART wired to the ESP RX/TX.\n"
+                "  For Wi‑Fi-only control (no UART), use:\n"
+                "    ROBOCLOUD_CONTROL_TRANSPORT=network ROBOCLOUD_NETWORK_HOST=<ESP_IP> python -m pi.remote_bridge\n"
+                "  Or try: ls /dev/serial* /dev/ttyAMA* /dev/ttyUSB*  then e.g.\n"
+                "    ROBOCLOUD_SERIAL_PORT=/dev/ttyAMA0 python -m pi.remote_bridge\n"
+                "  Add user to group 'dialout' if permission denied."
+            )
+            raise
+        print(
+            f"Arm serial OK: {serial_port!r} @ {serial_baudrate} baud → ESP UART "
+            f"(UDP commands on {control_host}:{control_port})."
+        )
 
     camera = Camera()
     if not camera.cap.isOpened():
@@ -387,7 +420,7 @@ def main() -> None:
     if camera2:
         print(f"Stream2 (overhead): http://{stream_host}:{stream_port}/stream2")
     _udp_control_loop(
-        serial_io=serial_io,
+        arm_io=arm_io,
         host=control_host,
         port=control_port,
         base_min=BASE_MIN,
