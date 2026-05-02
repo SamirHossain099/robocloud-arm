@@ -33,14 +33,18 @@ def _fourcc_from_string(code: str) -> int:
 
 
 def _configure_capture(cap) -> tuple[int, int, float]:
-    """Set width/height/FPS; optional FOURCC (MJPG helps C270 at 720p on USB2)."""
-    w = int(os.getenv("ROBOCLOUD_CAMERA_WIDTH", "1280"))
-    h = int(os.getenv("ROBOCLOUD_CAMERA_HEIGHT", "720"))
+    """Set width/height/FPS and FOURCC.
+
+    Defaults favor stable UVC capture on USB2 (YUYV 640x480) over high-res MJPEG,
+    which often spams corrupt-frame warnings on Pi + C270-class webcams.
+    """
+    w = int(os.getenv("ROBOCLOUD_CAMERA_WIDTH", "640"))
+    h = int(os.getenv("ROBOCLOUD_CAMERA_HEIGHT", "480"))
     fps = float(os.getenv("ROBOCLOUD_CAMERA_FPS", "30"))
 
     fourcc_raw = os.getenv("ROBOCLOUD_CAMERA_FOURCC", "").strip()
     if not fourcc_raw and platform.system() == "Linux":
-        fourcc_raw = "MJPG"
+        fourcc_raw = "YUYV"
     # UVC: set pixel format before resolution for reliable MJPG negotiation.
     if fourcc_raw and fourcc_raw.lower() not in {"none", "default", "0"}:
         cap.set(cv2.CAP_PROP_FOURCC, _fourcc_from_string(fourcc_raw))
