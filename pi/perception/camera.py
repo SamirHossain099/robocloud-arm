@@ -5,6 +5,13 @@ from typing import Optional, Union
 
 import cv2
 
+try:
+    # Cuts noise from benign MJPEG decode quirks on some UVC devices (e.g. C270).
+    if os.getenv("ROBOCLOUD_CAMERA_VERBOSE", "").strip() not in {"1", "true", "True"}:
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+except Exception:
+    pass
+
 Source = Union[int, str]
 
 
@@ -34,6 +41,7 @@ def _configure_capture(cap) -> tuple[int, int, float]:
     fourcc_raw = os.getenv("ROBOCLOUD_CAMERA_FOURCC", "").strip()
     if not fourcc_raw and platform.system() == "Linux":
         fourcc_raw = "MJPG"
+    # UVC: set pixel format before resolution for reliable MJPG negotiation.
     if fourcc_raw and fourcc_raw.lower() not in {"none", "default", "0"}:
         cap.set(cv2.CAP_PROP_FOURCC, _fourcc_from_string(fourcc_raw))
 
@@ -41,10 +49,23 @@ def _configure_capture(cap) -> tuple[int, int, float]:
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
     cap.set(cv2.CAP_PROP_FPS, fps)
 
+    # Single-frame buffer reduces stale / stitched MJPEG frames (common "Corrupt JPEG" source).
+    buf = os.getenv("ROBOCLOUD_CAMERA_BUFFERSIZE", "1").strip()
+    if buf and platform.system() == "Linux":
+        try:
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, int(buf))
+        except Exception:
+            pass
+
     aw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     ah = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     af = float(cap.get(cv2.CAP_PROP_FPS))
     return aw, ah, af
+
+
+def _warmup_capture(cap, n: int) -> None:
+    for _ in range(max(0, n)):
+        cap.grab()
 
 
 def _open_capture(source: Source):
@@ -76,6 +97,11 @@ class Camera:
         self.actual_fps = 0.0
         if self.cap.isOpened():
             self.actual_width, self.actual_height, self.actual_fps = _configure_capture(self.cap)
+            try:
+                warmup = int(os.getenv("ROBOCLOUD_CAMERA_WARMUP_FRAMES", "8"))
+            except ValueError:
+                warmup = 8
+            _warmup_capture(self.cap, warmup)
         self.frame = None
         self.running = False
         self.lock = threading.Lock()
