@@ -332,10 +332,11 @@ def main() -> None:
     camera = Camera()
     if not camera.cap.isOpened():
         print(
-            "ERROR: Camera did not open. For Logitech C270, try another node, e.g.\n"
+            "ERROR: Camera did not open. On Linux, unset ROBOCLOUD_CAMERA* to autoprobes /dev/video* "
+            "(ROBOCLOUD_CAMERA_AUTOPROBE=1 default), or set an explicit capture node, e.g.\n"
             "  v4l2-ctl --list-devices\n"
             "Then: ROBOCLOUD_CAMERA=/dev/video2 ROBOCLOUD_MOVEBASE_SPEED=fast python -m pi.remote_bridge\n"
-            "Or: ROBOCLOUD_CAMERA=2 ...  (numeric index)\n"
+            "Or: ROBOCLOUD_CAMERA_INDEX=2 ...  (numeric index; often wrong if 0 is a metadata node)\n"
             "Ensure the user can access video devices (e.g. in the 'video' group)."
         )
     else:
@@ -347,7 +348,7 @@ def main() -> None:
     camera.start()
 
     camera2 = None
-    src2 = parse_secondary_camera_source()
+    src2 = parse_secondary_camera_source(primary=camera.source)
     if src2 is not None:
         camera2 = Camera(source=src2, role="secondary")
         if not camera2.cap.isOpened():
