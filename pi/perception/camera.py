@@ -20,6 +20,33 @@ def _parse_camera_source() -> Source:
     return int(os.getenv("ROBOCLOUD_CAMERA_INDEX", "0"))
 
 
+def _fourcc_from_string(code: str) -> int:
+    code = code.strip().upper().ljust(4)[:4]
+    return cv2.VideoWriter_fourcc(*code)
+
+
+def _configure_capture(cap) -> tuple[int, int, float]:
+    """Set width/height/FPS; optional FOURCC (MJPG helps C270 at 720p on USB2)."""
+    w = int(os.getenv("ROBOCLOUD_CAMERA_WIDTH", "1280"))
+    h = int(os.getenv("ROBOCLOUD_CAMERA_HEIGHT", "720"))
+    fps = float(os.getenv("ROBOCLOUD_CAMERA_FPS", "30"))
+
+    fourcc_raw = os.getenv("ROBOCLOUD_CAMERA_FOURCC", "").strip()
+    if not fourcc_raw and platform.system() == "Linux":
+        fourcc_raw = "MJPG"
+    if fourcc_raw and fourcc_raw.lower() not in {"none", "default", "0"}:
+        cap.set(cv2.CAP_PROP_FOURCC, _fourcc_from_string(fourcc_raw))
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+    cap.set(cv2.CAP_PROP_FPS, fps)
+
+    aw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    ah = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    af = float(cap.get(cv2.CAP_PROP_FPS))
+    return aw, ah, af
+
+
 def _open_capture(source: Source):
     """Open VideoCapture with a backend that works for USB UVC on Linux."""
     system = platform.system()
@@ -44,6 +71,11 @@ class Camera:
         else:
             self.source = _parse_camera_source()
         self.cap = _open_capture(self.source)
+        self.actual_width = 0
+        self.actual_height = 0
+        self.actual_fps = 0.0
+        if self.cap.isOpened():
+            self.actual_width, self.actual_height, self.actual_fps = _configure_capture(self.cap)
         self.frame = None
         self.running = False
         self.lock = threading.Lock()

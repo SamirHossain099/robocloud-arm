@@ -294,7 +294,10 @@ def main() -> None:
             "Ensure the user can access video devices (e.g. in the 'video' group)."
         )
     else:
-        print(f"Camera opened: {camera.source!r}")
+        print(
+            f"Camera opened: {camera.source!r} "
+            f"({camera.actual_width}x{camera.actual_height} @ {camera.actual_fps:.1f} fps)"
+        )
 
     camera.start()
 
