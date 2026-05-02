@@ -8,6 +8,7 @@ from http import server
 from socketserver import ThreadingMixIn
 
 import cv2
+import serial
 
 from pi.config import (
     BASE_MAX,
@@ -327,7 +328,21 @@ def main() -> None:
     use_moveclaw = os.getenv("ROBOCLOUD_CONTROL_USE_MOVECLAW", "1").strip() not in {"0", "false", "False"}
 
     serial_io = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
-    serial_io.connect()
+    try:
+        serial_io.connect()
+    except (OSError, serial.SerialException) as exc:
+        print(
+            f"ERROR: Cannot open arm serial {serial_port!r} @ {serial_baudrate}: {exc}\n"
+            "  Video/stream can still work; arm control needs Pi UART wired to the ESP RX/TX.\n"
+            "  Try: ls /dev/serial* /dev/ttyAMA* /dev/ttyUSB*  then e.g.\n"
+            "    ROBOCLOUD_SERIAL_PORT=/dev/ttyAMA0 python -m pi.remote_bridge\n"
+            "  Add user to group 'dialout' if permission denied. ESP WiFi is NOT used for laptop→arm control."
+        )
+        raise
+    print(
+        f"Arm serial OK: {serial_port!r} @ {serial_baudrate} baud → ESP UART "
+        f"(UDP commands on {control_host}:{control_port}; ESP WiFi optional for this path)."
+    )
 
     camera = Camera()
     if not camera.cap.isOpened():

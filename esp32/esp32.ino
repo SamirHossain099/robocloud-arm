@@ -31,6 +31,7 @@ struct WiFiCredential {
 };
 
 const WiFiCredential WIFI_CREDENTIALS[] = {
+  {"By the eye of Agamotto", "12345678"},
   {"TTUguest", "fearthestache"},
   {"Park East", "SilverGoldJackal"},
 };
