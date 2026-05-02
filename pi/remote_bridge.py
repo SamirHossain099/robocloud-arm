@@ -284,7 +284,18 @@ def main() -> None:
     serial_io = SerialIO(port=serial_port, baudrate=serial_baudrate, timeout=1)
     serial_io.connect()
 
-    camera = Camera(index=0)
+    camera = Camera()
+    if not camera.cap.isOpened():
+        print(
+            "ERROR: Camera did not open. For Logitech C270, try another node, e.g.\n"
+            "  v4l2-ctl --list-devices\n"
+            "Then: ROBOCLOUD_CAMERA=/dev/video2 ROBOCLOUD_MOVEBASE_SPEED=fast python -m pi.remote_bridge\n"
+            "Or: ROBOCLOUD_CAMERA=2 ...  (numeric index)\n"
+            "Ensure the user can access video devices (e.g. in the 'video' group)."
+        )
+    else:
+        print(f"Camera opened: {camera.source!r}")
+
     camera.start()
 
     stream_thread = threading.Thread(
