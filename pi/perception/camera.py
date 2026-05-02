@@ -110,7 +110,14 @@ def _list_v4l_capture_paths(
         if not cap.isOpened():
             cap.release()
             continue
-        ret, _ = cap.read()
+        # UVC often needs several grabs before the first good frame; a single read()
+        # misses working nodes and we fall back to index 0 (often absent on Pi 5).
+        _warmup_capture(cap, 6)
+        ret = False
+        for _ in range(12):
+            ret, _ = cap.read()
+            if ret:
+                break
         cap.release()
         if ret:
             found.append(path)
